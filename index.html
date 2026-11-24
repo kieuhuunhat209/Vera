@@ -3087,5 +3087,228 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
   });
 })();
 </script>
+<!-- ==================== VERA STORAGE QUOTA GUARD & ADMIN QUEUE SYNC ==================== -->
+<script>
+(function () {
+  const ADMIN_QUEUE_KEY = 'vera_admin_evidence_queue_v1';
+  const POSTS_KEY = 'VERA_feed_posts_v2';
+
+  function readQueue() {
+    try {
+      const raw = localStorage.getItem(ADMIN_QUEUE_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // Giải phóng bộ nhớ localStorage khi bị vượt hạn mức 5MB (QuotaExceededError)
+  function freeStorageSpace() {
+    try {
+      const rawPosts = localStorage.getItem(POSTS_KEY);
+      if (rawPosts) {
+        const posts = JSON.parse(rawPosts);
+        if (Array.isArray(posts) && posts.length > 0) {
+          // Loại bỏ chuỗi base64/frames/videoData nặng khỏi các bài cũ để giải phóng dung lượng
+          const slimPosts = posts.slice(-5).map(p => {
+            const copy = Object.assign({}, p);
+            delete copy.videoBase64;
+            delete copy.frames;
+            delete copy.evidenceFrames;
+            if (typeof copy.videoUrl === 'string' && copy.videoUrl.startsWith('data:')) {
+              copy.videoUrl = '';
+            }
+            return copy;
+          });
+          localStorage.setItem(POSTS_KEY, JSON.stringify(slimPosts));
+        }
+      }
+    } catch (e) {
+      try { localStorage.removeItem(POSTS_KEY); } catch (_) {}
+    }
+
+    // Xóa các key tạm nặng không cần thiết nếu vẫn còn đầy
+    const removableKeys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k !== ADMIN_QUEUE_KEY && k !== POSTS_KEY && /frame|base64|temp|cache/i.test(k)) {
+        removableKeys.push(k);
+      }
+    }
+    removableKeys.forEach(k => {
+      try { localStorage.removeItem(k); } catch (_) {}
+    });
+  }
+
+  function pushToAdminQueue(entry) {
+    const queue = readQueue();
+    const lightweightEntry = {
+      id: 'ev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      authorName: entry.authorName || entry.author || 'Người dùng Vera',
+      authorHandle: entry.authorHandle || '',
+      authorUid: entry.authorUid || '',
+      caption: (entry.caption || entry.content || '').slice(0, 300),
+      reason: entry.reason || 'Lỗi kiểm duyệt / nội dung cần Admin thẩm định',
+      riskScore: entry.riskScore || 90,
+      status: 'pending',
+      time: entry.time || new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    };
+    queue.unshift(lightweightEntry);
+    const trimmed = queue.slice(0, 30);
+
+    try {
+      localStorage.setItem(ADMIN_QUEUE_KEY, JSON.stringify(trimmed));
+    } catch (e) {
+      freeStorageSpace();
+      try {
+        localStorage.setItem(ADMIN_QUEUE_KEY, JSON.stringify(trimmed.slice(0, 10)));
+      } catch (_) {}
+    }
+    refreshAdminQueueUI();
+  }
+
+  // Bọc localStorage.setItem để bắt lỗi vượt dung lượng (QuotaExceededError) và tự lưu bằng chứng cho Admin
+  if (!Storage.prototype._veraQuotaGuarded) {
+    const origSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      try {
+        return origSetItem.apply(this, arguments);
+      } catch (err) {
+        if (err && (err.name === 'QuotaExceededError' || /quota/i.test(err.message || ''))) {
+          freeStorageSpace();
+          if (String(key) === POSTS_KEY) {
+            try {
+              const parsed = JSON.parse(value);
+              const lastItem = Array.isArray(parsed) ? parsed[parsed.length - 1] : null;
+              pushToAdminQueue({
+                authorName: lastItem?.authorName || lastItem?.userName || 'Người dùng',
+                caption: lastItem?.text || lastItem?.caption || 'Video dung lượng lớn vượt bộ nhớ trình duyệt',
+                reason: 'Tràn bộ nhớ lưu trữ trình duyệt khi đăng video (QuotaExceededError)',
+                riskScore: 85
+              });
+              // Lưu bản rút gọn 3 bài gần nhất để không văng lỗi nữa
+              if (Array.isArray(parsed)) {
+                const compact = parsed.slice(-3).map(item => {
+                  const c = Object.assign({}, item);
+                  delete c.frames;
+                  delete c.evidenceFrames;
+                  if (typeof c.videoUrl === 'string' && c.videoUrl.startsWith('data:')) c.videoUrl = '';
+                  return c;
+                });
+                return origSetItem.call(this, key, JSON.stringify(compact));
+              }
+            } catch (_) {}
+          }
+          return;
+        }
+        throw err;
+      }
+    };
+    Storage.prototype._veraQuotaGuarded = true;
+  }
+
+  // Bắt mọi alert() thông báo lỗi Fail-Closed / gửi đến Admin để ghi nhận chắc chắn vào hàng đợi
+  if (!window._veraAlertHooked) {
+    const origAlert = window.alert;
+    window.alert = function (msg) {
+      const text = String(msg || '');
+      if (/Fail-Closed|Admin|thẩm định|bạo lực|vi phạm/i.test(text)) {
+        const activeName = document.getElementById('vera-nav-account-btn')?.textContent?.replace(/•.*$/, '').trim() || 'Người dùng';
+        const captionInput = document.querySelector('textarea');
+        pushToAdminQueue({
+          authorName: activeName,
+          caption: captionInput ? captionInput.value.trim() : '',
+          reason: text.replace(/^❌\s*/g, '').slice(0, 220),
+          riskScore: 95
+        });
+      }
+      return origAlert.apply(this, arguments);
+    };
+    window._veraAlertHooked = true;
+  }
+
+  function refreshAdminQueueUI() {
+    const queue = readQueue();
+    const pendingCount = queue.filter(i => i.status === 'pending').length;
+
+    // Cập nhật số đếm trên nút "Quản trị AI" ở thanh trên
+    document.querySelectorAll('button, a').forEach(btn => {
+      const t = (btn.textContent || '');
+      if (t.includes('Quản trị AI')) {
+        const badge = btn.querySelector('span');
+        if (badge && /^\d+$/.test(badge.textContent.trim())) {
+          badge.textContent = String(pendingCount);
+        }
+      }
+    });
+
+    // Tìm khung "Hàng Đợi Bằng Chứng Video Bị Chặn (Admin Control)"
+    const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, div, span')).filter(
+      el => el.children.length === 0 && (el.textContent || '').includes('Hàng Đợi Bằng Chứng Video Bị Chặn')
+    );
+    if (headings.length === 0) return;
+
+    const card = headings[0].closest('div[class*="rounded"]') || headings[0].parentElement?.parentElement;
+    if (!card) return;
+
+    let listContainer = card.querySelector('#vera-synced-admin-queue-list');
+    if (!listContainer) {
+      listContainer = document.createElement('div');
+      listContainer.id = 'vera-synced-admin-queue-list';
+      listContainer.style.cssText = 'margin-top:12px;display:flex;flex-direction:column;gap:10px;';
+      card.appendChild(listContainer);
+    }
+
+    if (queue.length === 0) {
+      listContainer.innerHTML = '';
+      return;
+    }
+
+    // Ẩn dòng placeholder "Hàng đợi trống..." nếu đã có mục trong hàng đợi
+    Array.from(card.querySelectorAll('p, div, span')).forEach(el => {
+      if (el !== listContainer && !listContainer.contains(el) && (el.textContent || '').includes('Hàng đợi trống')) {
+        el.style.display = 'none';
+      }
+    });
+
+    listContainer.innerHTML = queue.map((item, idx) => `
+      <div style="background:#020617;border:1px solid ${item.status === 'approved' ? '#065f46' : (item.status === 'rejected' ? '#7f1d1d' : '#92400e')};border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:12px;font-weight:700;color:#fca5a5;">⚠️ #${idx + 1} • ${item.authorName} (${item.time})</span>
+          <span style="font-size:11px;padding:2px 8px;border-radius:999px;background:#1e293b;color:#fbbf24;font-weight:600;">Rủi ro: ${item.riskScore}% • ${item.status === 'pending' ? 'Chờ Admin duyệt' : (item.status === 'approved' ? 'Đã duyệt' : 'Đã chặn')}</span>
+        </div>
+        <div style="font-size:12px;color:#e2e8f0;"><b>Lý do:</b> ${item.reason}</div>
+        ${item.caption ? `<div style="font-size:12px;color:#94a3b8;"><b>Nội dung bài:</b> ${item.caption}</div>` : ''}
+        <div style="display:flex;gap:8px;margin-top:2px;">
+          <button type="button" onclick="window.VeraAdminQueue.decide('${item.id}','approved')" style="padding:5px 12px;border-radius:8px;border:none;background:#059669;color:#fff;font-size:11px;font-weight:600;cursor:pointer;">✓ Chấp thuận đăng</button>
+          <button type="button" onclick="window.VeraAdminQueue.decide('${item.id}','rejected')" style="padding:5px 12px;border-radius:8px;border:none;background:#dc2626;color:#fff;font-size:11px;font-weight:600;cursor:pointer;">✕ Gỡ bỏ vĩnh viễn</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  window.VeraAdminQueue = {
+    decide(id, decision) {
+      const queue = readQueue().map(item => item.id === id ? Object.assign({}, item, { status: decision }) : item);
+      localStorage.setItem(ADMIN_QUEUE_KEY, JSON.stringify(queue));
+      refreshAdminQueueUI();
+    },
+    refresh: refreshAdminQueueUI
+  };
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button, a');
+    if (btn && (btn.textContent || '').includes('Quản trị AI')) {
+      setTimeout(refreshAdminQueueUI, 80);
+    }
+  }, true);
+
+  window.addEventListener('DOMContentLoaded', () => {
+    refreshAdminQueueUI();
+    setInterval(refreshAdminQueueUI, 1500);
+  });
+})();
+</script>
 </body>
 </html>
