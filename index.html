@@ -4078,5 +4078,45 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
   });
 })();
 </script>
+<!-- ==================== VERA PERFORMANCE & ANTI-FREEZE GUARD ==================== -->
+<script>
+(function () {
+  // 1. Giới hạn tần suất gọi hàm nặng (debounce / throttle) để không khóa luồng giao diện Chrome
+  function createThrottle(fn, delayMs) {
+    let lastTime = 0;
+    let timer = null;
+    return function (...args) {
+      const now = Date.now();
+      const remaining = delayMs - (now - lastTime);
+      if (remaining <= 0) {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        lastTime = now;
+        fn.apply(this, args);
+      } else if (!timer) {
+        timer = setTimeout(() => {
+          lastTime = Date.now();
+          timer = null;
+          fn.apply(this, args);
+        }, remaining);
+      }
+    };
+  }
+
+  // 2. Làm nhẹ các tác vụ quét UI định kỳ để tránh Chrome báo "làm chậm trình duyệt"
+  if (window.VeraAdminQueue && typeof window.VeraAdminQueue.refresh === 'function') {
+    window.VeraAdminQueue.refresh = createThrottle(window.VeraAdminQueue.refresh, 3000);
+  }
+
+  // 3. Tự ngắt các MutationObserver chạy quá dày khi đang mở modal/panel
+  const origObserve = MutationObserver.prototype.observe;
+  MutationObserver.prototype.observe = function (target, options) {
+    const safeOptions = Object.assign({ childList: true, subtree: false }, options || {});
+    return origObserve.call(this, target, safeOptions);
+  };
+})();
+</script>
 </body>
 </html>
