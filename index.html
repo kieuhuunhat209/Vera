@@ -1,0 +1,2570 @@
+<!DOCTYPE html>
+<html lang="vi" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VERA - Mạng Xã Hội AI Kiểm Duyệt Trực Tiếp</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a',
+            },
+            danger: {
+              500: '#ef4444',
+              600: '#dc2626',
+              700: '#b91c1c'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbar for chat & feed */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(51, 65, 85, 0.8);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(71, 85, 105, 1);
+    }
+    .pulse-danger {
+      animation: pulseDanger 1.5s infinite;
+    }
+    @keyframes pulseDanger {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+      50% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
+    }
+  </style>
+</head>
+<body class="h-full bg-slate-950 font-sans antialiased text-slate-100 flex flex-col selection:bg-brand-500 selection:text-white">
+
+  <!-- APP CONTAINER -->
+  <div id="app" class="flex flex-col min-h-screen">
+    
+    <!-- TOP NAVIGATION BAR -->
+    <header class="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-2 flex items-center justify-between shadow-md">
+      <!-- Left: Logo & Search -->
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 cursor-pointer" onclick="navigateTo('feed')">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+            <i data-lucide="shield-check" class="w-6 h-6 stroke-[2.5]"></i>
+          </div>
+          <div>
+            <span class="text-xl font-black bg-gradient-to-r from-blue-400 via-cyan-300 to-indigo-300 bg-clip-text text-transparent">VERA</span>
+            <span class="block text-[10px] text-cyan-400 font-semibold tracking-widest -mt-1 uppercase">AI Guarded</span>
+          </div>
+        </div>
+
+        <div class="relative hidden sm:block ml-4">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-slate-400"></i>
+          <input type="text" placeholder="Tìm kiếm trên VERA..." class="bg-slate-800/90 text-sm text-slate-200 pl-9 pr-4 py-1.5 rounded-full w-56 lg:w-72 border border-slate-700/60 focus:outline-none focus:border-brand-500 transition-all">
+        </div>
+      </div>
+
+      <!-- Center: Main Navigation Tabs -->
+      <nav class="hidden md:flex items-center gap-1 lg:gap-2">
+        <button onclick="navigateTo('feed')" id="nav-feed" class="nav-tab active flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all text-brand-400 bg-slate-800 border border-slate-700/50">
+          <i data-lucide="newspaper" class="w-5 h-5"></i>
+          <span>Bảng tin</span>
+        </button>
+        <button onclick="navigateTo('friends')" id="nav-friends" class="nav-tab flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
+          <i data-lucide="users" class="w-5 h-5"></i>
+          <span>Bạn bè</span>
+        </button>
+        <button onclick="navigateTo('messenger')" id="nav-messenger" class="nav-tab flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50">
+          <i data-lucide="message-square" class="w-5 h-5"></i>
+          <span>Messenger</span>
+          <span id="unread-count" class="hidden px-1.5 py-0.5 text-[10px] bg-red-500 text-white font-bold rounded-full">1</span>
+        </button>
+        <button onclick="navigateTo('admin')" id="nav-admin" class="nav-tab flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 relative">
+          <i data-lucide="shield-alert" class="w-5 h-5 text-amber-400"></i>
+          <span>Quản trị AI</span>
+          <span id="admin-badge-count" class="px-1.5 py-0.5 text-[10px] bg-amber-500 text-slate-950 font-black rounded-full">0</span>
+        </button>
+      </nav>
+
+      <!-- Right: AI Key Status & User Profile -->
+      <div class="flex items-center gap-3">
+        <!-- AI Key Status Pill Button -->
+        <button onclick="openModal('ai-key-modal')" id="api-status-pill" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all bg-emerald-950/60 text-emerald-400 border-emerald-700/60 hover:bg-emerald-900/60">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <i data-lucide="cpu" class="w-3.5 h-3.5"></i>
+          <span id="api-status-text">AI Gemini Active</span>
+        </button>
+
+        <!-- Current User Selector Dropdown / Menu -->
+        <div class="relative group">
+          <button class="flex items-center gap-2 p-1 rounded-full bg-slate-800 border border-slate-700 hover:border-slate-600 transition">
+            <img id="nav-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop" class="w-8 h-8 rounded-full object-cover border border-brand-500/50" alt="Avatar">
+            <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 mr-1"></i>
+          </button>
+          
+          <!-- Quick User Switcher Menu -->
+          <div class="absolute right-0 top-full mt-2 w-64 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-2 hidden group-hover:block z-50">
+            <div class="px-3 py-2 border-b border-slate-800 mb-1">
+              <p id="nav-user-name" class="text-sm font-bold text-slate-100">Admin VERA</p>
+              <p id="nav-user-role" class="text-xs text-brand-400 font-medium">Hệ trị viên An ninh AI</p>
+            </div>
+            
+            <p class="px-3 py-1 text-[11px] font-bold text-slate-500 uppercase tracking-wider">Chuyển Tài Khoản Demo</p>
+            <button onclick="switchUser('admin')" class="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl hover:bg-slate-800 text-slate-300">
+              <span class="w-2 h-2 rounded-full bg-purple-500"></span> Admin VERA (Quản trị viên)
+            </button>
+            <button onclick="switchUser('user_a')" class="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl hover:bg-slate-800 text-slate-300">
+              <span class="w-2 h-2 rounded-full bg-blue-500"></span> Nguyễn Văn Minh (User A)
+            </button>
+            <button onclick="switchUser('user_b')" class="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl hover:bg-slate-800 text-slate-300">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Trần Thị Hoa (User B)
+            </button>
+
+            <div class="border-t border-slate-800 mt-1 pt-1">
+              <button onclick="openModal('ai-key-modal')" class="w-full flex items-center gap-2 px-3 py-2 text-xs text-cyan-400 hover:bg-slate-800 rounded-xl">
+                <i data-lucide="key" class="w-4 h-4"></i> Cấu hình Gemini API Key
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- MOBILE NAVIGATION BOTTOM BAR -->
+    <div class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 flex justify-around py-2">
+      <button onclick="navigateTo('feed')" class="flex flex-col items-center gap-1 text-brand-400">
+        <i data-lucide="newspaper" class="w-5 h-5"></i>
+        <span class="text-[10px]">Tin</span>
+      </button>
+      <button onclick="navigateTo('friends')" class="flex flex-col items-center gap-1 text-slate-400">
+        <i data-lucide="users" class="w-5 h-5"></i>
+        <span class="text-[10px]">Bạn bè</span>
+      </button>
+      <button onclick="navigateTo('messenger')" class="flex flex-col items-center gap-1 text-slate-400">
+        <i data-lucide="message-square" class="w-5 h-5"></i>
+        <span class="text-[10px]">Chat</span>
+      </button>
+      <button onclick="navigateTo('admin')" class="flex flex-col items-center gap-1 text-amber-400">
+        <i data-lucide="shield-alert" class="w-5 h-5"></i>
+        <span class="text-[10px]">Quản trị</span>
+      </button>
+    </div>
+
+    <!-- MAIN BODY SECTION -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-2 sm:px-4 py-4 grid grid-cols-1 md:grid-cols-12 gap-6 pb-16 md:pb-6">
+
+      <!-- LEFT SIDEBAR: PROFILE & NAVIGATION (Cols 3) -->
+      <aside class="hidden md:block md:col-span-3 space-y-4">
+        <!-- User Profile Card -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-sm">
+          <div class="flex items-center gap-3">
+            <img id="sidebar-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop" class="w-12 h-12 rounded-xl object-cover border-2 border-brand-500/60" alt="Avatar">
+            <div>
+              <h3 id="sidebar-name" class="font-bold text-slate-100 text-sm">Admin VERA</h3>
+              <p id="sidebar-handle" class="text-xs text-slate-400">@admin_VERA</p>
+            </div>
+          </div>
+          
+          <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+            <span class="text-slate-400">Bảo vệ AI:</span>
+            <span class="px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-400 font-semibold border border-emerald-800/60">Đang bật (Strict)</span>
+          </div>
+        </div>
+
+        <!-- Navigation Links -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-2 space-y-1">
+          <button onclick="navigateTo('feed')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-200 hover:bg-slate-800 font-medium text-sm transition">
+            <i data-lucide="home" class="w-5 h-5 text-brand-400"></i> Bảng tin chính
+          </button>
+          <button onclick="navigateTo('friends')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 hover:bg-slate-800 font-medium text-sm transition">
+            <i data-lucide="user-plus" class="w-5 h-5 text-indigo-400"></i> Lời mời kết bạn
+          </button>
+          <button onclick="navigateTo('messenger')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 hover:bg-slate-800 font-medium text-sm transition">
+            <i data-lucide="messages-square" class="w-5 h-5 text-emerald-400"></i> Trò chuyện Messenger
+          </button>
+          <button onclick="navigateTo('admin')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 hover:bg-slate-800 font-medium text-sm transition">
+            <i data-lucide="shield-check" class="w-5 h-5 text-amber-400"></i> Nhật ký Kiểm duyệt AI
+          </button>
+          <button onclick="openModal('ai-key-modal')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-300 hover:bg-slate-800 font-medium text-sm transition">
+            <i data-lucide="sliders" class="w-5 h-5 text-cyan-400"></i> Cài đặt Thuật toán AI
+          </button>
+        </div>
+
+        <!-- AI Moderation Standard Card -->
+        <div class="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border border-indigo-900/40 rounded-2xl p-4 text-xs space-y-2">
+          <div class="flex items-center gap-2 font-bold text-indigo-300">
+            <i data-lucide="scan-face" class="w-4 h-4"></i> Quy Trình Kiểm Duyệt Gemini
+          </div>
+          <p class="text-slate-400 leading-relaxed">
+            Mọi video tải lên đều được <b>Gemini 2.5 Flash</b> thẩm định liên tục. Nếu phát hiện bạo lực đấm/đá/tát, vết máu, hung khí hoặc 18+, video sẽ bị <b>Chặn Tuyệt Đối</b> ngay tức thì.
+          </p>
+        </div>
+      </aside>
+
+      <!-- CENTER CONTENT AREA (Cols 6 in Feed, 9 in Admin/Messenger) -->
+      <section id="main-content" class="md:col-span-6 space-y-4">
+        
+        <!-- FEED VIEW -->
+        <div id="view-feed" class="space-y-4">
+          <!-- CREATE POST BOX -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+            <div class="flex items-center gap-3">
+              <img id="post-box-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop" class="w-10 h-10 rounded-xl object-cover" alt="Avatar">
+              <input type="text" id="post-text-input" placeholder="Bạn đang nghĩ gì? Đăng bài hoặc tải video..." class="w-full bg-slate-800/80 hover:bg-slate-800 focus:bg-slate-800 text-slate-200 placeholder-slate-400 px-4 py-2.5 rounded-xl text-sm border border-slate-700/60 focus:outline-none focus:border-brand-500 transition">
+            </div>
+
+            <!-- Media Preview Area -->
+            <div id="media-preview-container" class="hidden mt-3 relative rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
+              <!-- Video Preview -->
+              <video id="video-preview" controls class="hidden w-full max-h-72 object-contain bg-black"></video>
+              <!-- Image Preview -->
+              <img id="image-preview" class="hidden w-full max-h-72 object-cover" alt="Preview">
+              
+              <!-- Video Specs Info -->
+              <div id="video-specs-tag" class="hidden absolute top-2 left-2 bg-slate-900/90 text-cyan-300 backdrop-blur-md px-2.5 py-1 rounded-lg text-xs font-mono border border-cyan-800/50 flex items-center gap-1.5">
+                <i data-lucide="file-video" class="w-3.5 h-3.5"></i>
+                <span id="video-size-label">0 MB</span>
+                <span id="video-mode-label" class="bg-brand-900/80 text-brand-300 px-1.5 py-0.2 rounded text-[10px]">Native Base64</span>
+              </div>
+
+              <!-- Remove Media Button -->
+              <button onclick="clearPostMedia()" class="absolute top-2 right-2 p-1.5 rounded-full bg-slate-900/80 text-slate-300 hover:text-white hover:bg-red-600 transition">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
+
+            <div class="flex items-center justify-between border-t border-slate-800/80 mt-3 pt-3">
+              <div class="flex items-center gap-1 sm:gap-2">
+                <!-- Video File Input -->
+                <label class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-indigo-400 font-medium text-xs cursor-pointer border border-slate-700/50 transition">
+                  <i data-lucide="video" class="w-4 h-4 text-indigo-400"></i>
+                  <span>Tải Video</span>
+                  <input type="file" id="video-file-input" accept="video/mp4,video/webm,video/quicktime" class="hidden" onchange="handleVideoSelected(event)">
+                </label>
+
+                <!-- Photo Input -->
+                <label class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-emerald-400 font-medium text-xs cursor-pointer border border-slate-700/50 transition">
+                  <i data-lucide="image" class="w-4 h-4 text-emerald-400"></i>
+                  <span>Ảnh</span>
+                  <input type="file" id="image-file-input" accept="image/*" class="hidden" onchange="handleImageSelected(event)">
+                </label>
+
+                <!-- AI Mode Indicator badge -->
+                <span class="hidden sm:flex items-center gap-1 px-2 py-1 text-[11px] text-slate-400 font-mono">
+                  <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i> Gemini 2.5 Active
+                </span>
+              </div>
+
+              <button onclick="submitNewPost()" id="btn-submit-post" class="flex items-center gap-2 px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm shadow-md shadow-brand-600/30 transition active:scale-95">
+                <i data-lucide="send" class="w-4 h-4"></i>
+                <span>Đăng Bài</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- POSTS FEED LIST -->
+          <div id="posts-list" class="space-y-4">
+            <!-- Dynamic posts rendered here -->
+          </div>
+        </div>
+
+        <!-- FRIENDS VIEW -->
+        <div id="view-friends" class="hidden space-y-4">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+            <h2 class="text-lg font-bold text-slate-100 mb-3 flex items-center gap-2">
+              <i data-lucide="users" class="w-5 h-5 text-indigo-400"></i> Danh Sách Bạn Bè & Lời Mời
+            </h2>
+            <div id="friends-list-container" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <!-- MESSENGER VIEW -->
+        <div id="view-messenger" class="hidden space-y-4">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl h-[600px] shadow-lg flex overflow-hidden">
+            <!-- Left Chat List -->
+            <div class="w-1/3 border-r border-slate-800 p-3 flex flex-col">
+              <h3 class="font-bold text-slate-200 text-sm mb-3">Tin nhắn</h3>
+              <div id="chat-users-list" class="space-y-1 flex-1 overflow-y-auto">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+
+            <!-- Right Active Conversation -->
+            <div class="w-2/3 flex flex-col bg-slate-950/40">
+              <div id="chat-header" class="p-3 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <img id="chat-header-avatar" src="" class="w-8 h-8 rounded-full object-cover" alt="User">
+                  <div>
+                    <h4 id="chat-header-name" class="font-bold text-sm text-slate-200">Chọn một bạn bè</h4>
+                    <p class="text-[11px] text-emerald-400 flex items-center gap-1">
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Đang hoạt động
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Message Stream -->
+              <div id="chat-messages-container" class="flex-1 p-4 overflow-y-auto space-y-3">
+                <div class="text-center text-slate-500 text-xs my-10">Chọn một cuộc trò chuyện để bắt đầu nhắn tin an toàn.</div>
+              </div>
+
+              <!-- Message Input -->
+              <div class="p-3 border-t border-slate-800 bg-slate-900 flex items-center gap-2">
+                <button onclick="sendSticker('🛡️ AI Safe')" class="p-2 text-slate-400 hover:text-cyan-400 hover:bg-slate-800 rounded-xl">
+                  <i data-lucide="smile" class="w-5 h-5"></i>
+                </button>
+                <input type="text" id="chat-input-text" placeholder="Nhập tin nhắn..." class="flex-1 bg-slate-800 border border-slate-700/70 text-slate-200 text-sm px-4 py-2 rounded-xl focus:outline-none focus:border-brand-500">
+                <button onclick="sendChatMessage()" class="p-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl shadow-md">
+                  <i data-lucide="send" class="w-4 h-4"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ADMIN MODERATION VIEW -->
+        <div id="view-admin" class="hidden space-y-4">
+          <!-- Admin Dashboard Stats -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center gap-3">
+              <div class="p-3 bg-red-950/80 text-red-400 rounded-xl border border-red-800/60">
+                <i data-lucide="shield-alert" class="w-6 h-6"></i>
+              </div>
+              <div>
+                <p class="text-xs text-slate-400">Video Bị Chặn AI</p>
+                <h3 id="stat-blocked-count" class="text-2xl font-black text-red-400">0</h3>
+              </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center gap-3">
+              <div class="p-3 bg-emerald-950/80 text-emerald-400 rounded-xl border border-emerald-800/60">
+                <i data-lucide="shield-check" class="w-6 h-6"></i>
+              </div>
+              <div>
+                <p class="text-xs text-slate-400">Video An Toàn Đã Duyệt</p>
+                <h3 id="stat-safe-count" class="text-2xl font-black text-emerald-400">0</h3>
+              </div>
+            </div>
+
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center gap-3">
+              <div class="p-3 bg-indigo-950/80 text-indigo-400 rounded-xl border border-indigo-800/60">
+                <i data-lucide="cpu" class="w-6 h-6"></i>
+              </div>
+              <div>
+                <p class="text-xs text-slate-400">Mô hình AI Đang Dùng</p>
+                <h3 class="text-sm font-bold text-indigo-300">Gemini 2.5 Flash</h3>
+              </div>
+            </div>
+          </div>
+
+          <!-- Queue Container -->
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-4">
+            <div class="flex items-center justify-between">
+              <h2 class="text-base font-bold text-slate-100 flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-400"></i> Hàng Đợi Bằng Chứng Video Bị Chặn (Admin Control)
+              </h2>
+              <span class="text-xs text-slate-400">Tự động bắt bạo lực vật lý & máu me</span>
+            </div>
+
+            <div id="admin-queue-list" class="space-y-4">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- RIGHT SIDEBAR: AI MONITOR & ONLINE FRIENDS (Cols 3) -->
+      <aside class="hidden lg:block lg:col-span-3 space-y-4">
+        <!-- AI Realtime Protection Status Widget -->
+        <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span> Gemini AI Monitor
+            </span>
+            <span class="text-[10px] bg-slate-800 text-cyan-400 px-2 py-0.5 rounded-full border border-slate-700">Strict Forensic</span>
+          </div>
+
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between text-slate-400">
+              <span>Độ nhạy Bạo lực:</span>
+              <span class="text-red-400 font-bold">100% (Pháp y)</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Chế độ Video:</span>
+              <span class="text-cyan-400 font-mono">Native Video / 12-Frame</span>
+            </div>
+            <div class="flex justify-between text-slate-400">
+              <span>Chính sách:</span>
+              <span class="text-amber-400 font-bold">Fail-Closed (Chặt chẽ)</span>
+            </div>
+          </div>
+
+          <button onclick="openModal('ai-key-modal')" class="w-full text-center text-xs py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl border border-slate-700 transition">
+            <i data-lucide="settings" class="w-3.5 h-3.5 inline mr-1"></i> Kiểm tra API Key & Cài đặt
+          </button>
+        </div>
+
+        <!-- Online Friends List -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3">
+          <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Người liên hệ trực tuyến</h3>
+          <div class="space-y-2" id="sidebar-online-users">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </aside>
+
+    </main>
+
+    <!-- MODAL 1: AI API KEY CONFIGURATION & DIAGNOSTIC TEST -->
+    <div id="ai-key-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-3xl p-6 shadow-2xl relative space-y-4">
+        <button onclick="closeModal('ai-key-modal')" class="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+
+        <div class="flex items-center gap-3">
+          <div class="p-3 bg-cyan-950 text-cyan-400 rounded-2xl border border-cyan-800/60">
+            <i data-lucide="key" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-slate-100">Cấu Hình Google Gemini API Key</h3>
+            <p class="text-xs text-slate-400">Cung cấp API Key để kích hoạt Hệ thống Kiểm duyệt Video Gemini 2.5 Flash</p>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <label class="block text-xs font-semibold text-slate-300">Gemini API Key</label>
+          <div class="relative">
+            <input type="password" id="input-gemini-key" placeholder="AIzaSy..." class="w-full bg-slate-950 border border-slate-700 text-slate-100 text-sm rounded-xl px-4 py-2.5 pr-10 focus:outline-none focus:border-brand-500">
+            <button onclick="toggleKeyVisibility()" class="absolute right-3 top-2.5 text-slate-400 hover:text-slate-200">
+              <i data-lucide="eye" id="eye-icon" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <p class="text-[11px] text-slate-400">API Key được lưu trữ an toàn trong trình duyệt của bạn (localStorage).</p>
+        </div>
+
+        <!-- Diagnostic Test Box -->
+        <div id="api-test-result" class="hidden p-3 rounded-xl border text-xs leading-relaxed"></div>
+
+        <div class="flex items-center justify-between gap-3 border-t border-slate-800 pt-4">
+          <button onclick="testGeminiApiKey()" class="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold border border-slate-700 transition">
+            <i data-lucide="zap" class="w-4 h-4"></i> Kiểm tra kết nối API Key
+          </button>
+          
+          <div class="flex items-center gap-2">
+            <button onclick="closeModal('ai-key-modal')" class="px-4 py-2 rounded-xl text-slate-400 text-xs hover:text-white">Hủy</button>
+            <button onclick="saveApiKey()" class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs shadow-md">Lưu Cấu Hình</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 2: AI SCANNING LOADING OVERLAY -->
+    <div id="ai-scanning-modal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-lg flex items-center justify-center p-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-6 shadow-2xl text-center space-y-4">
+        <div class="relative w-20 h-20 mx-auto">
+          <div class="absolute inset-0 rounded-full border-4 border-cyan-500/20 animate-ping"></div>
+          <div class="w-20 h-20 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg">
+            <i data-lucide="eye" class="w-10 h-10 animate-bounce"></i>
+          </div>
+        </div>
+
+        <div>
+          <h3 class="text-lg font-bold text-slate-100">Gemini 2.5 Flash Đang Xem Video</h3>
+          <p id="scanning-mode-desc" class="text-xs text-cyan-400 mt-1">Đang phân tích trực tiếp chuyển động, âm thanh & bạo lực tác động vật lý...</p>
+        </div>
+
+        <!-- Progress Steps -->
+        <div class="bg-slate-950 rounded-2xl p-4 border border-slate-800 text-xs text-left space-y-2">
+          <div class="flex items-center gap-2 text-emerald-400">
+            <i data-lucide="check-circle" class="w-4 h-4"></i> Trích xuất Base64 Video / Chuỗi khung hình
+          </div>
+          <div class="flex items-center gap-2 text-cyan-400 animate-pulse">
+            <i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Thẩm định 4 Tiêu chí Pháp y (Máu / Đánh nhau / Hung khí / 18+)
+          </div>
+          <div class="flex items-center gap-2 text-slate-500">
+            <i data-lucide="circle" class="w-4 h-4"></i> Áp dụng chính sách Fail-Closed & Xuất kết quả
+          </div>
+        </div>
+
+        <p class="text-[11px] text-slate-400">Vui lòng chờ trong giây lát, AI đang xem từng giây video gốc.</p>
+      </div>
+    </div>
+
+    <!-- MODAL 3: RED ALERT - AI MODERATION BLOCKED POST (FAIL-CLOSED HARD BLOCK) -->
+    <div id="ai-blocked-modal" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4 hidden">
+      <div class="bg-slate-900 border-2 border-red-600 w-full max-w-xl rounded-3xl p-6 shadow-2xl relative space-y-4 pulse-danger">
+        <button onclick="closeModal('ai-blocked-modal')" class="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+
+        <div class="flex items-center gap-3 border-b border-red-900/50 pb-4">
+          <div class="p-3 bg-red-950 text-red-500 rounded-2xl border border-red-800/80">
+            <i data-lucide="shield-alert" class="w-8 h-8"></i>
+          </div>
+          <div>
+            <h3 class="text-xl font-black text-red-500 uppercase tracking-wide">🚨 CẢNH BÁO BẢO VỆ CỘNG ĐỒNG</h3>
+            <p class="text-xs text-slate-300">Video bị CHẶN TUYỆT ĐỐI do vi phạm Chính sách Kiểm duyệt Bạo lực</p>
+          </div>
+        </div>
+
+        <!-- 4 Forensic Rubric Cards Grid -->
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <!-- Blood & Gore -->
+          <div id="rubric-gore" class="p-3 rounded-xl border bg-slate-950 flex items-center justify-between">
+            <span class="flex items-center gap-1.5 text-slate-300 font-semibold"><i data-lucide="droplet" class="w-4 h-4 text-red-400"></i> Máu me / Vết thương</span>
+            <span id="badge-gore" class="px-2 py-0.5 rounded text-[10px] font-bold">KHÔNG</span>
+          </div>
+          <!-- Physical Violence -->
+          <div id="rubric-violence" class="p-3 rounded-xl border bg-slate-950 flex items-center justify-between">
+            <span class="flex items-center gap-1.5 text-slate-300 font-semibold"><i data-lucide="swords" class="w-4 h-4 text-amber-400"></i> Tác động Vật lý / Đánh</span>
+            <span id="badge-violence" class="px-2 py-0.5 rounded text-[10px] font-bold">KHÔNG</span>
+          </div>
+          <!-- Weapons -->
+          <div id="rubric-weapons" class="p-3 rounded-xl border bg-slate-950 flex items-center justify-between">
+            <span class="flex items-center gap-1.5 text-slate-300 font-semibold"><i data-lucide="axe" class="w-4 h-4 text-purple-400"></i> Hung khí / Vật sắc nhọn</span>
+            <span id="badge-weapons" class="px-2 py-0.5 rounded text-[10px] font-bold">KHÔNG</span>
+          </div>
+          <!-- NSFW -->
+          <div id="rubric-nsfw" class="p-3 rounded-xl border bg-slate-950 flex items-center justify-between">
+            <span class="flex items-center gap-1.5 text-slate-300 font-semibold"><i data-lucide="eye-off" class="w-4 h-4 text-pink-400"></i> Nội dung 18+ / NSFW</span>
+            <span id="badge-nsfw" class="px-2 py-0.5 rounded text-[10px] font-bold">KHÔNG</span>
+          </div>
+        </div>
+
+        <!-- Risk Gauge & AI Description -->
+        <div class="bg-slate-950 rounded-2xl p-4 border border-slate-800 space-y-2 text-xs">
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400 font-medium">Điểm rủi ro bạo lực (Risk Score):</span>
+            <span id="blocked-risk-score" class="text-red-400 font-black text-sm">85 / 100</span>
+          </div>
+
+          <div>
+            <span class="text-slate-400 block font-semibold mb-1">AI Gemini đã nhìn thấy gì trong Video?</span>
+            <p id="blocked-ai-desc" class="text-slate-200 bg-slate-900 p-2.5 rounded-xl border border-slate-800 leading-relaxed italic">
+              "Phát hiện cảnh người dùng có hành vi tác động vật lý, đấm xô ngã và xuất hiện vết bầm bạo lực."
+            </p>
+          </div>
+
+          <div>
+            <span class="text-slate-400 block font-semibold mb-1">Lý do từ chối đăng bài:</span>
+            <p id="blocked-ai-reason" class="text-red-300 bg-red-950/40 p-2.5 rounded-xl border border-red-900/60 leading-relaxed font-semibold">
+              Vi phạm tiêu chí tác động vật lý bạo lực và an toàn cộng đồng VERA.
+            </p>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center border-t border-slate-800 pt-4">
+          <span class="text-[11px] text-slate-400">Đã gửi báo cáo bằng chứng tới Admin Moderation Center</span>
+          <div class="flex gap-2">
+            <button onclick="navigateTo('admin'); closeModal('ai-blocked-modal')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs font-semibold">Xem trong Admin</button>
+            <button onclick="closeModal('ai-blocked-modal')" class="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold text-xs shadow-md">Đã Hiểu</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 4: SAFE VIDEO PROOF MODAL (TRANSPARENCY INSPECTION) -->
+    <div id="ai-proof-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
+      <div class="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-3xl p-6 shadow-2xl relative space-y-4">
+        <button onclick="closeModal('ai-proof-modal')" class="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+
+        <div class="flex items-center gap-3">
+          <div class="p-3 bg-emerald-950 text-emerald-400 rounded-2xl border border-emerald-800/60">
+            <i data-lucide="shield-check" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-slate-100">Bằng Chứng Thẩm Định Video Của AI</h3>
+            <p class="text-xs text-emerald-400">Video đã vượt qua toàn bộ tiêu chí kiểm duyệt bạo lực</p>
+          </div>
+        </div>
+
+        <div class="bg-slate-950 rounded-2xl p-4 border border-slate-800 space-y-3 text-xs">
+          <div>
+            <span class="text-slate-400 font-semibold block mb-1">Mô tả những gì AI nhìn thấy (videoDescription):</span>
+            <p id="proof-ai-desc" class="text-slate-200 bg-slate-900 p-3 rounded-xl border border-slate-800 leading-relaxed italic">
+              --
+            </p>
+          </div>
+
+          <div class="flex justify-between items-center text-xs pt-2 border-t border-slate-800">
+            <span class="text-slate-400">Điểm rủi ro an toàn:</span>
+            <span id="proof-risk-score" class="text-emerald-400 font-bold">0 / 100 (Rất an toàn)</span>
+          </div>
+        </div>
+
+        <div class="flex justify-end border-t border-slate-800 pt-3">
+          <button onclick="closeModal('ai-proof-modal')" class="px-5 py-2 rounded-xl bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs font-semibold">Đóng</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- APPLICATION LOGIC & GEMINI INTEGRATION SCRIPT -->
+  <script>
+    /* ==========================================================================
+       1. APP STATE & LOCAL STORAGE INITIALIZATION
+       ========================================================================== */
+    const STORAGE_KEY_API = 'VERA_gemini_api_key';
+    const STORAGE_KEY_POSTS = 'VERA_feed_posts_v2';
+    const STORAGE_KEY_QUEUE = 'VERA_admin_queue_v2';
+    const STORAGE_KEY_CHATS = 'VERA_chats_v2';
+
+const GEMINI_MODEL_POOL = [
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3-flash-preview',
+    'gemini-2.5-pro',
+    'gemini-3.1-pro-preview',
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemma-4-31b-it',
+    'gemma-4-26b-a4b-it'
+];
+
+async function extractFramesFromVideoBase64(base64Data, mimeType, count = 8) {
+    return new Promise((resolve) => {
+        try {
+            const byteChars = atob(base64Data);
+            const byteNumbers = new Array(byteChars.length);
+            for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+            const blob = new Blob([new Uint8Array(byteNumbers)], { type: mimeType || 'video/mp4' });
+            const url = URL.createObjectURL(blob);
+
+            const video = document.createElement('video');
+            video.src = url;
+            video.muted = true;
+            video.playsInline = true;
+            video.preload = 'auto';
+
+            const frames = [];
+            let done = false;
+            const finish = () => {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                URL.revokeObjectURL(url);
+                resolve(frames);
+            };
+            const timer = setTimeout(finish, 10000);
+
+            video.onerror = finish;
+            video.onloadedmetadata = () => {
+                const duration = isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const scale = Math.min(1, 720 / (video.videoWidth || 720));
+                canvas.width = Math.round((video.videoWidth || 720) * scale);
+                canvas.height = Math.round((video.videoHeight || 405) * scale);
+
+                let idx = 0;
+                const capture = () => {
+                    try {
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        frames.push({
+                            time: ((idx + 0.5) / count * duration).toFixed(1),
+                            data: canvas.toDataURL('image/jpeg', 0.78).split(',')[1]
+                        });
+                    } catch (e) {}
+                    idx++;
+                    if (idx < count) {
+                        video.currentTime = Math.min(duration - 0.05, ((idx + 0.5) / count) * duration);
+                    } else {
+                        finish();
+                    }
+                };
+                video.onseeked = capture;
+                video.currentTime = Math.min(duration - 0.05, (0.5 / count) * duration);
+            };
+        } catch (e) {
+            resolve([]);
+        }
+    });
+}
+
+async function fetchGeminiSmart(apiKey, payload) {
+    let lastError = "Không thể kết nối tới Gemini API";
+
+    const tryModels = async (currentPayload, modelsToTry) => {
+        for (const model of modelsToTry) {
+            try {
+                // Bỏ qua Gemma nếu đang gửi file video thô (Gemma chỉ nhận ảnh/chữ)
+                const hasRawVideo = currentPayload.contents?.[0]?.parts?.some(p => p.inlineData?.mimeType?.startsWith('video/'));
+                if (hasRawVideo && model.startsWith('gemma')) continue;
+
+                // Điều chỉnh format nếu gọi sang dòng Gemma 4
+                let finalPayload = currentPayload;
+                if (model.startsWith('gemma') && currentPayload.systemInstruction) {
+                    const sysText = currentPayload.systemInstruction.parts?.map(p => p.text).join('\n') || '';
+                    finalPayload = {
+                        contents: [{
+                            role: 'user',
+                            parts: [{ text: sysText + "\n\nChỉ trả về JSON thuần túy, không kèm giải thích ngoài JSON." }, ...(currentPayload.contents?.[0]?.parts || [])]
+                        }]
+                    };
+                }
+
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(finalPayload)
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    console.log(`✅ AI kiểm duyệt thành công bằng model: ${model}`);
+                    return { ok: true, model, data };
+                }
+                lastError = data.error?.message || `Lỗi HTTP ${response.status}`;
+                if ([503, 429, 404, 400].includes(response.status)) {
+                    console.warn(`⚠️ Model ${model} bận/không hỗ trợ (${response.status}), chuyển model tiếp theo...`);
+                    continue;
+                }
+                return { ok: false, error: lastError };
+            } catch (err) {
+                lastError = err.message;
+            }
+        }
+        return null;
+    };
+
+    // Bước 1: Thử gửi trực tiếp payload gốc
+    const directRes = await tryModels(payload, GEMINI_MODEL_POOL);
+    if (directRes) return directRes;
+
+    // Bước 2: Nếu gửi video thô bị 503 toàn bộ -> Tự bóc 8 khung hình JPEG siêu nhẹ để AI quét từng cảnh
+    const parts = payload.contents?.[0]?.parts || [];
+    const videoPart = parts.find(p => p.inlineData?.mimeType?.startsWith('video/'));
+    if (videoPart) {
+        console.warn("🔄 Server Google quá tải băng thông video thô, tự động chuyển sang quét 8 khung hình nét cao...");
+        const frames = await extractFramesFromVideoBase64(videoPart.inlineData.data, videoPart.inlineData.mimeType, 8);
+        if (frames.length > 0) {
+            const frameParts = parts.filter(p => !p.inlineData?.mimeType?.startsWith('video/'));
+            frames.forEach((f, i) => {
+                frameParts.push({ text: `Khung hình ${i + 1} (tại giây ${f.time}s):` });
+                frameParts.push({ inlineData: { mimeType: 'image/jpeg', data: f.data } });
+            });
+            const lightPayload = { ...payload, contents: [{ role: 'user', parts: frameParts }] };
+            const frameRes = await tryModels(lightPayload, GEMINI_MODEL_POOL);
+            if (frameRes) return frameRes;
+        }
+    }
+
+    return { ok: false, error: lastError };
+}
+    // Users Database Mock
+    const USERS = {
+      admin: {
+        id: 'admin',
+        name: 'Admin VERA',
+        handle: '@admin_VERA',
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop',
+        role: 'Hệ trị viên An ninh AI'
+      },
+      user_a: {
+        id: 'user_a',
+        name: 'Nguyễn Văn Minh',
+        handle: '@minh_nguyen',
+        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop',
+        role: 'Thành viên VERA'
+      },
+      user_b: {
+        id: 'user_b',
+        name: 'Trần Thị Hoa',
+        handle: '@hoa_tran',
+        avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop',
+        role: 'Thành viên VERA'
+      }
+    };
+
+    let currentUser = USERS.admin;
+    let selectedMediaFile = null;
+    let selectedMediaType = null; // 'image' | 'video'
+    let activeChatUserId = 'user_a';
+
+    // Initial Demo Posts if empty
+    const INITIAL_POSTS = [
+      {
+        id: 'post_1',
+        userId: 'user_a',
+        userName: 'Nguyễn Văn Minh',
+        userAvatar: USERS.user_a.avatar,
+        text: 'Vừa quay được video đi phượt khám phá thiên nhiên siêu đẹp! Video đã qua AI kiểm duyệt an toàn 100%. 🏞️✨',
+        mediaType: 'image',
+        mediaUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&fit=crop',
+        aiVerified: true,
+        aiReport: {
+          videoDescription: "Cảnh quay phong cảnh núi rừng tự nhiên xanh tươi, không có bất kỳ hành vi bạo lực hay vi phạm nào.",
+          riskScore: 0,
+          isSafe: true
+        },
+        likes: ['user_b', 'admin'],
+        comments: [
+          { userName: 'Trần Thị Hoa', text: 'Cảnh đẹp quá anh ơi!' }
+        ],
+        timestamp: '10 phút trước'
+      }
+    ];
+
+    /* ==========================================================================
+       2. HELPER FUNCTIONS & MODAL MANAGERS
+       ========================================================================== */
+    function getApiKey() {
+      return localStorage.getItem(STORAGE_KEY_API) || '';
+    }
+
+    function saveApiKey() {
+      const key = document.getElementById('input-gemini-key').value.trim();
+      localStorage.setItem(STORAGE_KEY_API, key);
+      updateApiStatusUI();
+      closeModal('ai-key-modal');
+      alert('Đã lưu Gemini API Key thành công!');
+    }
+
+    function toggleKeyVisibility() {
+      const input = document.getElementById('input-gemini-key');
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    function updateApiStatusUI() {
+      const key = getApiKey();
+      const pill = document.getElementById('api-status-pill');
+      const text = document.getElementById('api-status-text');
+
+      if (key) {
+        pill.className = "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all bg-emerald-950/80 text-emerald-400 border-emerald-700/60 hover:bg-emerald-900/60";
+        text.innerText = "🟢 AI Gemini Ready";
+      } else {
+        pill.className = "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all bg-red-950/80 text-red-400 border-red-700/60 hover:bg-red-900/60 pulse-danger";
+        text.innerText = "🔴 Chưa nhập API Key";
+      }
+    }
+
+    function openModal(id) {
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    function switchUser(userId) {
+      if (USERS[userId]) {
+        currentUser = USERS[userId];
+        document.getElementById('nav-avatar').src = currentUser.avatar;
+        document.getElementById('sidebar-avatar').src = currentUser.avatar;
+        document.getElementById('post-box-avatar').src = currentUser.avatar;
+        document.getElementById('nav-user-name').innerText = currentUser.name;
+        document.getElementById('sidebar-name').innerText = currentUser.name;
+        document.getElementById('sidebar-handle').innerText = currentUser.handle;
+        renderPosts();
+        renderFriends();
+      }
+    }
+
+    function navigateTo(tab) {
+      document.querySelectorAll('.nav-tab').forEach(el => {
+        el.className = "nav-tab flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all text-slate-400 hover:text-slate-200 hover:bg-slate-800/50";
+      });
+      const targetNav = document.getElementById(`nav-${tab}`);
+      if (targetNav) {
+        targetNav.className = "nav-tab active flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-sm transition-all text-brand-400 bg-slate-800 border border-slate-700/50";
+      }
+
+      // Views
+      document.getElementById('view-feed').classList.add('hidden');
+      document.getElementById('view-friends').classList.add('hidden');
+      document.getElementById('view-messenger').classList.add('hidden');
+      document.getElementById('view-admin').classList.add('hidden');
+
+      document.getElementById(`view-${tab}`).classList.remove('hidden');
+
+      // Expand main area width if Admin or Messenger
+      const mainContent = document.getElementById('main-content');
+      if (tab === 'admin' || tab === 'messenger') {
+        mainContent.className = "flex-1 max-w-7xl w-full mx-auto px-2 sm:px-4 py-4 grid grid-cols-1 md:grid-cols-12 gap-6 pb-16 md:pb-6";
+        document.getElementById(`view-${tab}`).className = "md:col-span-9 space-y-4";
+      } else {
+        mainContent.className = "flex-1 max-w-7xl w-full mx-auto px-2 sm:px-4 py-4 grid grid-cols-1 md:grid-cols-12 gap-6 pb-16 md:pb-6";
+        document.getElementById('view-feed').className = "md:col-span-6 space-y-4";
+      }
+
+      if (tab === 'admin') renderAdminQueue();
+      if (tab === 'messenger') renderMessenger();
+      if (tab === 'friends') renderFriends();
+    }
+
+    /* ==========================================================================
+       3. VIDEO EXTRACTION & BASE64 PROCESSING ENGINE
+       ========================================================================== */
+    function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64Str = reader.result.split(',')[1];
+          resolve(base64Str);
+        };
+        reader.onerror = err => reject(err);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // Extract N frames via HTML5 Canvas for Admin proof thumbnails
+    async function extractVideoFrames(videoFile, count = 4, targetWidth = 480) {
+      return new Promise((resolve) => {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.muted = true;
+        video.playsInline = true;
+        const tempUrl = URL.createObjectURL(videoFile);
+        video.src = tempUrl;
+
+        const frames = [];
+        video.onloadedmetadata = async () => {
+          const duration = video.duration || 1;
+          const intervals = [];
+          for (let i = 1; i <= count; i++) {
+            intervals.push((duration * i) / (count + 1));
+          }
+
+          for (const time of intervals) {
+            await new Promise((res) => {
+              video.currentTime = time;
+              video.onseeked = () => {
+                const canvas = document.createElement('canvas');
+                const aspect = video.videoHeight / video.videoWidth || 0.75;
+                canvas.width = targetWidth;
+                canvas.height = targetWidth * aspect;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                frames.push(canvas.toDataURL('image/jpeg', 0.85));
+                res();
+              };
+            });
+          }
+          // Cleanup temporary blob URL safely
+          URL.revokeObjectURL(tempUrl);
+          resolve(frames);
+        };
+
+        video.onerror = () => {
+          URL.revokeObjectURL(tempUrl);
+          resolve([]);
+        };
+      });
+    }
+
+    /* ==========================================================================
+       4. GEMINI 2.5 FLASH FORENSIC VIDEO INSPECTION ENGINE (FAIL-CLOSED)
+       ========================================================================== */
+    async function inspectVideoWithGemini(videoFile) {
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        openModal('ai-key-modal');
+        throw new Error('CHƯA_CÓ_KEY: Bạn chưa nhập Gemini API Key. Vui lòng cấu hình API Key để tiếp tục.');
+      }
+
+      const fileSizeMB = videoFile.size / (1024 * 1024);
+      let payloadParts = [];
+
+      // SYSTEM PROMPT ENFORCING FORENSIC RUBRIC
+      const systemInstructionText = `
+Bạn là Hệ thống AI Phân tích Pháp y & Kiểm duyệt Video siêu chặt chẽ cho mạng xã hội VERA.
+Nhiệm vụ: Thẩm định bạo lực tác động vật lý, vết máu me, hung khí, và nội dung 18+.
+
+BẮT BUỘC trả về duy nhất 1 chuỗi JSON theo đúng định dạng sau:
+{
+  "videoDescription": "Mô tả chi tiết những gì diễn ra trong video bằng tiếng Việt",
+  "hasBloodOrGore": false,
+  "hasPhysicalViolence": false,
+  "hasWeapons": false,
+  "hasNSFW": false,
+  "riskScore": 0,
+  "categories": ["nhãn vi phạm tiếng Việt"],
+  "reason": "Giải thích chi tiết tại sao vi phạm hoặc tại sao an toàn",
+  "isSafe": true
+}
+
+QUY TẮC PHÁP Y RẤT CHẶT:
+- "hasPhysicalViolence" = true nếu có bất kỳ hành vi đấm, đá, tát, đánh nhau, túm tóc, vật lộn dưới sàn, kéo lê, xô đẩy mạnh, bóp cổ, hoặc ném đồ vật bạo lực vào người khác.
+- "hasBloodOrGore" = true nếu thấy bất kỳ vết máu, thương tích hở, bầm tím hoặc chảy máu.
+- "hasWeapons" = true nếu xuất hiện dao, súng, gậy gộc dùng để đe dọa hoặc tấn công.
+- "riskScore" là số nguyên từ 0 đến 100.
+Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích ngoài JSON.
+`;
+
+      if (fileSizeMB <= 18) {
+        // Mode 1: NATIVE VIDEO (Send complete video file via base64)
+        document.getElementById('scanning-mode-desc').innerText = `Đang tải & xem trực tiếp video gốc (${fileSizeMB.toFixed(1)} MB) với Gemini 2.5 Flash...`;
+        const videoBase64 = await fileToBase64(videoFile);
+        payloadParts = [
+          {
+            inlineData: {
+              mimeType: videoFile.type || 'video/mp4',
+              data: videoBase64
+            }
+          },
+          { text: "Phân tích pháp y kỹ lưỡng toàn bộ chuyển động và âm thanh video này theo quy tắc tiêu chí." }
+        ];
+      } else {
+        // Mode 2: HIGH-RES 12-FRAME SEQUENCE SCANNING
+        document.getElementById('scanning-mode-desc').innerText = `Video lớn (${fileSizeMB.toFixed(1)} MB) > 18MB. Đang trích xuất chuỗi 12 khung hình 768px để quét chuyển động liên tục...`;
+        const highResFrames = await extractVideoFrames(videoFile, 12, 768);
+        
+        highResFrames.forEach((frameBase64, idx) => {
+          payloadParts.push({
+            inlineData: {
+              mimeType: 'image/jpeg',
+              data: frameBase64.split(',')[1]
+            }
+          });
+        });
+        payloadParts.push({ text: `Đây là chuỗi 12 khung hình theo thời gian từ video ${videoFile.name}. Hãy kiểm tra chuyển động tác động vật lý và bạo lực giữa các khung hình.` });
+      }
+
+      
+
+      const requestPayload = {
+        contents: [{
+          role: 'user',
+          parts: payloadParts
+        }],
+        systemInstruction: {
+          parts: [{ text: systemInstructionText }]
+        },
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      };
+      const result = await fetchGeminiSmart(apiKey, requestPayload);
+    if (!result.ok) {
+        throw new Error(result.error);
+    }
+    const data = result.data;
+
+      const candidate = data.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+      const blockReason = data.promptFeedback?.blockReason;
+
+      // FAIL-CLOSED: Trigger safety block if Google safety filters triggered
+      if (blockReason || finishReason === 'SAFETY' || finishReason === 'PROHIBITED_CONTENT' || finishReason === 'BLOCKLIST') {
+        return {
+          videoDescription: "Bộ lọc an toàn Google Gemini 2.5 Flash đã phát hiện trực tiếp cảnh quay bạo lực / nguy hiểm bị ngăn chặn khẩn cấp.",
+          hasBloodOrGore: true,
+          hasPhysicalViolence: true,
+          hasWeapons: false,
+          hasNSFW: false,
+          riskScore: 99,
+          categories: ["Bạo lực nghiêm trọng bị Google chặn"],
+          reason: `Google Safety Triggered: ${blockReason || finishReason}`,
+          isSafe: false
+        };
+      }
+
+      if (candidate?.content?.parts?.[0]?.text) {
+        let rawJson = candidate.content.parts[0].text.trim();
+        rawJson = rawJson.replace(/```json/gi, '').replace(/```/g, '').trim();
+        return JSON.parse(rawJson);
+      } else {
+        throw new Error("Không nhận được dữ liệu phản hồi hợp lệ từ mô hình Gemini.");
+      }
+    }
+
+    // TEST GEMINI API KEY DIAGNOSTIC
+    async function testGeminiApiKey() {
+      const key = document.getElementById('input-gemini-key').value.trim() || getApiKey();
+      const resBox = document.getElementById('api-test-result');
+      resBox.classList.remove('hidden');
+      resBox.className = "p-3 rounded-xl border text-xs leading-relaxed bg-slate-950 text-slate-300 border-slate-800 animate-pulse";
+      resBox.innerText = "⏳ Đang kết nối tới endpoint Google Gemini 2.5 Flash để kiểm tra...";
+
+      if (!key) {
+        resBox.className = "p-3 rounded-xl border text-xs leading-relaxed bg-red-950/80 text-red-300 border-red-800";
+        resBox.innerText = "❌ Lỗi: Bạn chưa nhập Gemini API Key!";
+        return;
+      }
+
+      try {
+        const result = await fetchGeminiSmart(key, {
+            contents: [{ parts: [{ text: "Hãy trả về duy nhất từ OK" }] }]
+        });
+        if (result.ok && result.data?.candidates?.[0]) {
+            resBox.className = "p-3 rounded-xl border text-xs leading-relaxed bg-emerald-950/90 text-emerald-300 border-emerald-800";
+            resBox.innerHTML = `✅ <b>Kết nối Thành Công!</b> Model <b>${result.model}</b> đã sẵn sàng kiểm duyệt video trực tiếp.`;
+        } else {
+            throw new Error(result.error || 'Khóa không hợp lệ');
+        }
+      } catch (err) {
+        resBox.className = "p-3 rounded-xl border text-xs leading-relaxed bg-red-950/90 text-red-300 border-red-800";
+        resBox.innerHTML = `❌ <b>Kiểm tra thất bại:</b> ${err.message}`;
+      }
+    }
+
+    /* ==========================================================================
+       5. POST CREATION & MODERATION DISPATCHER
+       ========================================================================== */
+    function handleVideoSelected(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      selectedMediaFile = file;
+      selectedMediaType = 'video';
+
+      const container = document.getElementById('media-preview-container');
+      const videoEl = document.getElementById('video-preview');
+      const imgEl = document.getElementById('image-preview');
+      const specsTag = document.getElementById('video-specs-tag');
+
+      imgEl.classList.add('hidden');
+      videoEl.classList.remove('hidden');
+      specsTag.classList.remove('hidden');
+      container.classList.remove('hidden');
+
+      videoEl.src = URL.createObjectURL(file);
+
+      const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+      document.getElementById('video-size-label').innerText = `${sizeMB} MB`;
+      const modeLabel = document.getElementById('video-mode-label');
+      if (file.size <= 18 * 1024 * 1024) {
+        modeLabel.innerText = "Native Direct Base64";
+        modeLabel.className = "bg-emerald-900/80 text-emerald-300 px-1.5 py-0.2 rounded text-[10px]";
+      } else {
+        modeLabel.innerText = "12-Frame Sequence Scan";
+        modeLabel.className = "bg-amber-900/80 text-amber-300 px-1.5 py-0.2 rounded text-[10px]";
+      }
+    }
+
+    function handleImageSelected(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      selectedMediaFile = file;
+      selectedMediaType = 'image';
+
+      const container = document.getElementById('media-preview-container');
+      const videoEl = document.getElementById('video-preview');
+      const imgEl = document.getElementById('image-preview');
+      const specsTag = document.getElementById('video-specs-tag');
+
+      videoEl.classList.add('hidden');
+      specsTag.classList.add('hidden');
+      imgEl.classList.remove('hidden');
+      container.classList.remove('hidden');
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        imgEl.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearPostMedia() {
+      selectedMediaFile = null;
+      selectedMediaType = null;
+      document.getElementById('media-preview-container').classList.add('hidden');
+      document.getElementById('video-file-input').value = '';
+      document.getElementById('image-file-input').value = '';
+    }
+
+    async function submitNewPost() {
+      const textInput = document.getElementById('post-text-input');
+      const text = textInput.value.trim();
+
+      if (!text && !selectedMediaFile) {
+        alert('Vui lòng nhập nội dung hoặc chọn video/ảnh để đăng!');
+        return;
+      }
+
+      // If VIDEO selected -> Run Gemini 2.5 Flash Forensic Inspection
+      if (selectedMediaType === 'video' && selectedMediaFile) {
+        const apiKey = getApiKey();
+        if (!apiKey) {
+          openModal('ai-key-modal');
+          alert('🔴 Vui lòng nhập Gemini API Key để kiểm duyệt video trước khi đăng!');
+          return;
+        }
+
+        openModal('ai-scanning-modal');
+
+        try {
+          // Extract 4 evidence frames using Canvas for Admin Queue
+          const evidenceThumbnails = await extractVideoFrames(selectedMediaFile, 4, 480);
+          
+          // Run Gemini Inspection
+          const aiReport = await inspectVideoWithGemini(selectedMediaFile);
+
+          closeModal('ai-scanning-modal');
+
+          // CODE HARD BLOCK CHECK FOR VIOLATIONS
+          const isViolation = aiReport.hasBloodOrGore || 
+                              aiReport.hasPhysicalViolence || 
+                              aiReport.hasWeapons || 
+                              aiReport.hasNSFW || 
+                              aiReport.isSafe === false || 
+                              Number(aiReport.riskScore) >= 35;
+
+          if (isViolation) {
+            // SHOW RED ALERT MODAL & PUSH TO ADMIN QUEUE
+            displayBlockedModal(aiReport);
+
+            const blockedPost = {
+              id: 'blocked_' + Date.now(),
+              userId: currentUser.id,
+              userName: currentUser.name,
+              userAvatar: currentUser.avatar,
+              text: text || '(Video bị chặn)',
+              videoName: selectedMediaFile.name,
+              evidenceThumbnails: evidenceThumbnails,
+              aiReport: aiReport,
+              timestamp: new Date().toLocaleTimeString() + ' ' + new Date().toLocaleDateString()
+            };
+
+            const queue = JSON.parse(localStorage.getItem(STORAGE_KEY_QUEUE) || '[]');
+            queue.unshift(blockedPost);
+            localStorage.setItem(STORAGE_KEY_QUEUE, JSON.stringify(queue));
+
+            updateAdminBadge();
+            clearPostMedia();
+            textInput.value = '';
+            return;
+          }
+
+          // SAFE VIDEO -> CREATE POST WITH PROOF
+          const videoDataUrl = await fileToBase64(selectedMediaFile);
+          const newPost = {
+            id: 'post_' + Date.now(),
+            userId: currentUser.id,
+            userName: currentUser.name,
+            userAvatar: currentUser.avatar,
+            text: text,
+            mediaType: 'video',
+            mediaUrl: `data:${selectedMediaFile.type || 'video/mp4'};base64,${videoDataUrl}`,
+            aiVerified: true,
+            aiReport: aiReport,
+            likes: [],
+            comments: [],
+            timestamp: 'Vừa xong'
+          };
+
+          saveAndAppendPost(newPost);
+          clearPostMedia();
+          textInput.value = '';
+
+        } catch (err) {
+          closeModal('ai-scanning-modal');
+          alert(`❌ Lỗi Kiểm Duyệt Fail-Closed: ${err.message}\nBài viết đã được gửi đến Admin để thẩm định thủ công.`);
+        }
+
+      } else {
+        // IMAGE OR TEXT POST
+        let mediaUrl = null;
+        if (selectedMediaType === 'image' && selectedMediaFile) {
+          mediaUrl = await new Promise((res) => {
+            const reader = new FileReader();
+            reader.onload = e => res(e.target.result);
+            reader.readAsDataURL(selectedMediaFile);
+          });
+        }
+
+        const newPost = {
+          id: 'post_' + Date.now(),
+          userId: currentUser.id,
+          userName: currentUser.name,
+          userAvatar: currentUser.avatar,
+          text: text,
+          mediaType: selectedMediaType,
+          mediaUrl: mediaUrl,
+          aiVerified: false,
+          likes: [],
+          comments: [],
+          timestamp: 'Vừa xong'
+        };
+
+        saveAndAppendPost(newPost);
+        clearPostMedia();
+        textInput.value = '';
+      }
+    }
+
+    function displayBlockedModal(report) {
+      document.getElementById('blocked-risk-score').innerText = `${report.riskScore || 85} / 100`;
+      document.getElementById('blocked-ai-desc').innerText = `"${report.videoDescription || 'Phát hiện tác động vật lý bạo lực.'}"`;
+      document.getElementById('blocked-ai-reason').innerText = report.reason || 'Vi phạm tiêu chuẩn cộng đồng.';
+
+      // Update 4 Rubric Badges
+      setupRubricBadge('gore', report.hasBloodOrGore);
+      setupRubricBadge('violence', report.hasPhysicalViolence);
+      setupRubricBadge('weapons', report.hasWeapons);
+      setupRubricBadge('nsfw', report.hasNSFW);
+
+      openModal('ai-blocked-modal');
+    }
+
+    function setupRubricBadge(key, hasViolation) {
+      const card = document.getElementById(`rubric-${key}`);
+      const badge = document.getElementById(`badge-${key}`);
+
+      if (hasViolation) {
+        card.className = "p-3 rounded-xl border bg-red-950/80 border-red-800/80 flex items-center justify-between";
+        badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white";
+        badge.innerText = "CÓ VI PHẠM";
+      } else {
+        card.className = "p-3 rounded-xl border bg-slate-950 border-slate-800 flex items-center justify-between";
+        badge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-400";
+        badge.innerText = "KHÔNG";
+      }
+    }
+
+    function saveAndAppendPost(post) {
+      const posts = getStoredPosts();
+      posts.unshift(post);
+      localStorage.setItem(STORAGE_KEY_POSTS, JSON.stringify(posts));
+      renderPosts();
+    }
+
+    function getStoredPosts() {
+      const raw = localStorage.getItem(STORAGE_KEY_POSTS);
+      return raw ? JSON.parse(raw) : INITIAL_POSTS;
+    }
+
+    /* ==========================================================================
+       6. FEED & POST RENDERING ENGINE
+       ========================================================================== */
+    function renderPosts() {
+      const posts = getStoredPosts();
+      const container = document.getElementById('posts-list');
+      container.innerHTML = '';
+
+      posts.forEach(post => {
+        const isLiked = post.likes.includes(currentUser.id);
+        
+        const card = document.createElement('div');
+        card.className = "bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-3";
+
+        card.innerHTML = `
+          <!-- Header -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <img src="${post.userAvatar}" class="w-10 h-10 rounded-xl object-cover" alt="Avatar">
+              <div>
+                <h4 class="font-bold text-sm text-slate-100 flex items-center gap-1.5">
+                  ${post.userName}
+                  ${post.userId === 'admin' ? '<span class="text-[10px] bg-purple-900/80 text-purple-300 px-1.5 py-0.2 rounded font-semibold">Admin</span>' : ''}
+                </h4>
+                <p class="text-[11px] text-slate-400">${post.timestamp}</p>
+              </div>
+            </div>
+
+            ${post.aiVerified ? `
+              <button onclick='showAiProofModal(${JSON.stringify(post.aiReport)})' class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-400 border border-emerald-800/80 text-xs font-semibold hover:bg-emerald-900/80 transition">
+                <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                <span>Đã qua AI xem video</span>
+              </button>
+            ` : ''}
+          </div>
+
+          <!-- Text -->
+          ${post.text ? `<p class="text-sm text-slate-200 leading-relaxed">${escapeHtml(post.text)}</p>` : ''}
+
+          <!-- Media -->
+          ${post.mediaUrl ? `
+            <div class="rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
+              ${post.mediaType === 'video' ? `
+                <video src="${post.mediaUrl}" controls class="w-full max-h-96 object-contain bg-black"></video>
+              ` : `
+                <img src="${post.mediaUrl}" class="w-full max-h-96 object-cover" alt="Post Media">
+              `}
+            </div>
+          ` : ''}
+
+          <!-- Actions -->
+          <div class="flex items-center justify-between border-t border-b border-slate-800/80 py-2 text-xs font-semibold text-slate-400">
+            <button onclick="toggleLikePost('${post.id}')" class="flex-1 flex items-center justify-center gap-1.5 py-1 rounded-lg hover:bg-slate-800 transition ${isLiked ? 'text-red-500' : ''}">
+              <i data-lucide="heart" class="w-4 h-4 ${isLiked ? 'fill-red-500' : ''}"></i>
+              <span>Thích (${post.likes.length})</span>
+            </button>
+            <button onclick="toggleCommentBox('${post.id}')" class="flex-1 flex items-center justify-center gap-1.5 py-1 rounded-lg hover:bg-slate-800 transition">
+              <i data-lucide="message-square" class="w-4 h-4"></i>
+              <span>Bình luận (${post.comments.length})</span>
+            </button>
+            <button onclick="alert('Đã chia sẻ bài viết lên trang cá nhân!')" class="flex-1 flex items-center justify-center gap-1.5 py-1 rounded-lg hover:bg-slate-800 transition">
+              <i data-lucide="share-2" class="w-4 h-4"></i>
+              <span>Chia sẻ</span>
+            </button>
+          </div>
+
+          <!-- Comments Container -->
+          <div id="comments-sec-${post.id}" class="space-y-2 pt-1">
+            ${post.comments.map(c => `
+              <div class="flex items-start gap-2 text-xs bg-slate-950 p-2.5 rounded-xl border border-slate-800/60">
+                <span class="font-bold text-slate-200">${escapeHtml(c.userName)}:</span>
+                <span class="text-slate-300 flex-1">${escapeHtml(c.text)}</span>
+              </div>
+            `).join('')}
+
+            <div class="flex items-center gap-2 pt-1">
+              <input type="text" id="comment-input-${post.id}" placeholder="Viết bình luận an toàn..." class="flex-1 bg-slate-800 border border-slate-700/60 text-slate-200 text-xs px-3 py-2 rounded-xl focus:outline-none focus:border-brand-500">
+              <button onclick="addComment('${post.id}')" class="px-3 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-semibold">Gửi</button>
+            </div>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+
+      lucide.createIcons();
+    }
+
+    function toggleLikePost(postId) {
+      const posts = getStoredPosts();
+      const post = posts.find(p => p.id === postId);
+      if (post) {
+        const idx = post.likes.indexOf(currentUser.id);
+        if (idx >= 0) post.likes.splice(idx, 1);
+        else post.likes.push(currentUser.id);
+        localStorage.setItem(STORAGE_KEY_POSTS, JSON.stringify(posts));
+        renderPosts();
+      }
+    }
+
+    function addComment(postId) {
+      const input = document.getElementById(`comment-input-${postId}`);
+      const text = input.value.trim();
+      if (!text) return;
+
+      const posts = getStoredPosts();
+      const post = posts.find(p => p.id === postId);
+      if (post) {
+        post.comments.push({ userName: currentUser.name, text: text });
+        localStorage.setItem(STORAGE_KEY_POSTS, JSON.stringify(posts));
+        renderPosts();
+      }
+    }
+
+    function showAiProofModal(report) {
+      document.getElementById('proof-ai-desc').innerText = `"${report.videoDescription || 'Đã kiểm duyệt thành công.'}"`;
+      document.getElementById('proof-risk-score').innerText = `${report.riskScore || 0} / 100 (An toàn)`;
+      openModal('ai-proof-modal');
+    }
+
+    /* ==========================================================================
+       7. ADMIN CONTROL CENTER (EVIDENCE THUMBNAILS & OVERRIDE)
+       ========================================================================== */
+    function renderAdminQueue() {
+      const rawQueue = localStorage.getItem(STORAGE_KEY_QUEUE);
+      const queue = rawQueue ? JSON.parse(rawQueue) : [];
+      const container = document.getElementById('admin-queue-list');
+      container.innerHTML = '';
+
+      // Stats Update
+      document.getElementById('stat-blocked-count').innerText = queue.length;
+      const safeCount = getStoredPosts().filter(p => p.aiVerified).length;
+      document.getElementById('stat-safe-count').innerText = safeCount;
+
+      if (queue.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-12 text-slate-500 text-xs">
+            <i data-lucide="shield-check" class="w-12 h-12 mx-auto mb-2 text-emerald-500 opacity-60"></i>
+            Hàng đợi trống. Tất cả video tải lên đều an toàn hoặc chưa có bài bị chặn.
+          </div>
+        `;
+        lucide.createIcons();
+        return;
+      }
+
+      queue.forEach(item => {
+        const card = document.createElement('div');
+        card.className = "bg-slate-950 border border-red-900/60 rounded-2xl p-4 space-y-3";
+
+        const thumbs = item.evidenceThumbnails || [];
+
+        card.innerHTML = `
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center gap-3">
+              <img src="${item.userAvatar}" class="w-9 h-9 rounded-xl object-cover" alt="User">
+              <div>
+                <h4 class="font-bold text-sm text-slate-100">${item.userName}</h4>
+                <p class="text-[11px] text-slate-400">File: ${item.videoName || 'video.mp4'} • ${item.timestamp}</p>
+              </div>
+            </div>
+            <span class="px-2.5 py-1 rounded-full bg-red-950 text-red-400 border border-red-800 text-xs font-bold">
+              Bị Chặn (Risk: ${item.aiReport?.riskScore || 85})
+            </span>
+          </div>
+
+          <!-- Grid of 4 Extracted Canvas Frames Evidence -->
+          <div>
+            <p class="text-xs font-semibold text-slate-400 mb-2">4 Bằng chứng Khung hình Canvas trích xuất từ Video:</p>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              ${thumbs.map(t => `<img src="${t}" class="w-full h-24 object-cover rounded-xl border border-slate-800 bg-slate-900" alt="Evidence Frame">`).join('')}
+            </div>
+          </div>
+
+          <!-- Forensic JSON Summary -->
+          <div class="bg-slate-900 p-3 rounded-xl border border-slate-800 text-xs space-y-1">
+            <p class="text-slate-300"><b>Mô tả AI:</b> ${item.aiReport?.videoDescription}</p>
+            <p class="text-red-400"><b>Lý do vi phạm:</b> ${item.aiReport?.reason}</p>
+          </div>
+
+          <!-- Admin Override Actions -->
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/80">
+            <button onclick="adminDeletePost('${item.id}')" class="px-3 py-1.5 rounded-xl bg-red-950 hover:bg-red-900 text-red-300 text-xs font-semibold border border-red-800 transition flex items-center gap-1">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Xóa Vĩnh Viễn
+            </button>
+            <button onclick="adminApprovePost('${item.id}')" class="px-3 py-1.5 rounded-xl bg-emerald-950 hover:bg-emerald-900 text-emerald-300 text-xs font-semibold border border-emerald-800 transition flex items-center gap-1">
+              <i data-lucide="check" class="w-3.5 h-3.5"></i> Phê Duyệt Thủ Công
+            </button>
+          </div>
+        `;
+
+        container.appendChild(card);
+      });
+
+      lucide.createIcons();
+    }
+
+    function adminDeletePost(blockedId) {
+      const queue = JSON.parse(localStorage.getItem(STORAGE_KEY_QUEUE) || '[]');
+      const filtered = queue.filter(q => q.id !== blockedId);
+      localStorage.setItem(STORAGE_KEY_QUEUE, JSON.stringify(filtered));
+      renderAdminQueue();
+      updateAdminBadge();
+    }
+
+    function adminApprovePost(blockedId) {
+      const queue = JSON.parse(localStorage.getItem(STORAGE_KEY_QUEUE) || '[]');
+      const target = queue.find(q => q.id === blockedId);
+      if (target) {
+        const approvedPost = {
+          id: 'post_approved_' + Date.now(),
+          userId: target.userId,
+          userName: target.userName,
+          userAvatar: target.userAvatar,
+          text: `[Được Admin duyệt thủ công] ${target.text}`,
+          mediaType: 'image',
+          mediaUrl: target.evidenceThumbnails?.[0] || '',
+          aiVerified: true,
+          aiReport: target.aiReport,
+          likes: [],
+          comments: [],
+          timestamp: 'Vừa phê duyệt'
+        };
+        saveAndAppendPost(approvedPost);
+        adminDeletePost(blockedId);
+        alert('Đã phê duyệt thủ công đăng bài viết lên Bảng tin!');
+      }
+    }
+
+    function updateAdminBadge() {
+      const queue = JSON.parse(localStorage.getItem(STORAGE_KEY_QUEUE) || '[]');
+      document.getElementById('admin-badge-count').innerText = queue.length;
+    }
+
+    /* ==========================================================================
+       8. MESSENGER CHAT & FRIENDS SYSTEM
+       ========================================================================== */
+    function renderFriends() {
+      const container = document.getElementById('friends-list-container');
+      const sidebarOnline = document.getElementById('sidebar-online-users');
+
+      container.innerHTML = '';
+      sidebarOnline.innerHTML = '';
+
+      Object.values(USERS).forEach(u => {
+        if (u.id === currentUser.id) return;
+
+        // Friends card
+        const fCard = document.createElement('div');
+        fCard.className = "flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800";
+        fCard.innerHTML = `
+          <div class="flex items-center gap-3">
+            <img src="${u.avatar}" class="w-10 h-10 rounded-xl object-cover" alt="User">
+            <div>
+              <h4 class="font-bold text-xs text-slate-100">${u.name}</h4>
+              <p class="text-[10px] text-slate-400">${u.role}</p>
+            </div>
+          </div>
+          <button onclick="openChatWith('${u.id}')" class="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-xl">
+            Nhắn tin
+          </button>
+        `;
+        container.appendChild(fCard);
+
+        // Sidebar online widget item
+        const sItem = document.createElement('div');
+        sItem.className = "flex items-center justify-between p-2 rounded-xl hover:bg-slate-800 cursor-pointer transition";
+        sItem.onclick = () => openChatWith(u.id);
+        sItem.innerHTML = `
+          <div class="flex items-center gap-2.5">
+            <div class="relative">
+              <img src="${u.avatar}" class="w-8 h-8 rounded-full object-cover" alt="Avatar">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-slate-900 absolute bottom-0 right-0"></span>
+            </div>
+            <span class="text-xs font-medium text-slate-200">${u.name}</span>
+          </div>
+          <i data-lucide="message-square" class="w-4 h-4 text-slate-500"></i>
+        `;
+        sidebarOnline.appendChild(sItem);
+      });
+
+      lucide.createIcons();
+    }
+
+    function renderMessenger() {
+      const usersList = document.getElementById('chat-users-list');
+      usersList.innerHTML = '';
+
+      Object.values(USERS).forEach(u => {
+        if (u.id === currentUser.id) return;
+
+        const btn = document.createElement('button');
+        btn.className = `w-full flex items-center gap-2.5 p-2.5 rounded-xl text-left transition ${u.id === activeChatUserId ? 'bg-slate-800 text-slate-100' : 'hover:bg-slate-800/50 text-slate-400'}`;
+        btn.onclick = () => openChatWith(u.id);
+
+        btn.innerHTML = `
+          <img src="${u.avatar}" class="w-9 h-9 rounded-full object-cover" alt="User">
+          <div class="flex-1 truncate">
+            <h5 class="font-bold text-xs text-slate-100">${u.name}</h5>
+            <p class="text-[10px] text-slate-400 truncate">Sẵn sàng nhắn tin an toàn...</p>
+          </div>
+        `;
+
+        usersList.appendChild(btn);
+      });
+
+      const activeUser = USERS[activeChatUserId] || USERS.user_a;
+      document.getElementById('chat-header-avatar').src = activeUser.avatar;
+      document.getElementById('chat-header-name').innerText = activeUser.name;
+
+      renderChatMessages();
+    }
+
+    function openChatWith(userId) {
+      activeChatUserId = userId;
+      navigateTo('messenger');
+    }
+
+    function renderChatMessages() {
+      const chats = JSON.parse(localStorage.getItem(STORAGE_KEY_CHATS) || '{}');
+      const threadKey = [currentUser.id, activeChatUserId].sort().join('_');
+      const messages = chats[threadKey] || [];
+
+      const container = document.getElementById('chat-messages-container');
+      container.innerHTML = '';
+
+      if (messages.length === 0) {
+        container.innerHTML = `<div class="text-center text-slate-500 text-xs my-10">Gửi lời chào tới ${USERS[activeChatUserId]?.name || 'bạn bè'}!</div>`;
+        return;
+      }
+
+      messages.forEach(m => {
+        const isMine = m.senderId === currentUser.id;
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `flex ${isMine ? 'justify-end' : 'justify-start'}`;
+
+        msgDiv.innerHTML = `
+          <div class="max-w-[75%] px-3.5 py-2 rounded-2xl text-xs font-medium ${isMine ? 'bg-brand-600 text-white rounded-br-xs' : 'bg-slate-800 text-slate-200 rounded-bl-xs'}">
+            ${escapeHtml(m.text)}
+          </div>
+        `;
+        container.appendChild(msgDiv);
+      });
+
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function sendChatMessage() {
+      const input = document.getElementById('chat-input-text');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const chats = JSON.parse(localStorage.getItem(STORAGE_KEY_CHATS) || '{}');
+      const threadKey = [currentUser.id, activeChatUserId].sort().join('_');
+      if (!chats[threadKey]) chats[threadKey] = [];
+
+      chats[threadKey].push({
+        senderId: currentUser.id,
+        text: text,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      });
+
+      localStorage.setItem(STORAGE_KEY_CHATS, JSON.stringify(chats));
+      input.value = '';
+      renderChatMessages();
+    }
+
+    function sendSticker(stickerText) {
+      document.getElementById('chat-input-text').value = stickerText;
+      sendChatMessage();
+    }
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /* ==========================================================================
+       9. APP INIT ON DOM READY
+       ========================================================================== */
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      updateApiStatusUI();
+      renderPosts();
+      renderFriends();
+      updateAdminBadge();
+
+      // Enter key for Chat
+      document.getElementById('chat-input-text')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendChatMessage();
+      });
+    });
+  </script>
+  <!-- ==================== VERA INDEPENDENT AUTH & 3-COLUMN LAYOUT FIX ==================== -->
+<style>
+  nav button, header button {
+    white-space: nowrap !important;
+  }
+
+  /* Lưới 3 cột chuẩn: Trái 250px - Giữa tự giãn tối đa - Phải 290px */
+  .vera-grid-3col {
+    display: grid !important;
+    grid-template-columns: 250px minmax(0, 1fr) 290px !important;
+    gap: 20px !important;
+    align-items: start !important;
+    width: 100% !important;
+    max-width: 1440px !important;
+    margin: 0 auto !important;
+    padding: 20px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Lưới 2 cột rộng khi mở Bạn bè / Messenger / Quản trị AI */
+  .vera-grid-2col {
+    display: grid !important;
+    grid-template-columns: 250px minmax(0, 1fr) !important;
+    gap: 20px !important;
+    align-items: start !important;
+    width: 100% !important;
+    max-width: 1440px !important;
+    margin: 0 auto !important;
+    padding: 20px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Ép cả 3 cột nằm đúng làn, cấm trôi đè lên nhau */
+  .vera-zone-left,
+  .vera-zone-center,
+  .vera-zone-right {
+    grid-column: auto !important;
+    position: relative !important;
+    inset: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .vera-zone-center > * {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  .vera-panel-active {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .vera-panel-hidden {
+    display: none !important;
+  }
+
+  /* Chỉ gộp 1 cột trên màn hình điện thoại (< 768px) */
+  @media (max-width: 768px) {
+    .vera-grid-3col,
+    .vera-grid-2col {
+      grid-template-columns: minmax(0, 1fr) !important;
+      padding: 12px !important;
+    }
+  }
+
+  /* Giao diện Modal Tài Khoản Độc Lập Vera */
+  #vera-auth-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    background: rgba(6, 10, 20, 0.88);
+    backdrop-filter: blur(10px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overflow-y: auto;
+  }
+  .vera-auth-card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 20px;
+    width: 100%;
+    max-width: 480px;
+    padding: 28px;
+    color: #f8fafc;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+  }
+  .vera-input {
+    width: 100%;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 14px;
+    outline: none;
+    box-sizing: border-box;
+  }
+  .vera-input:focus {
+    border-color: #3b82f6;
+  }
+  .vera-btn-primary {
+    width: 100%;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #fff;
+    font-weight: 600;
+    padding: 11px 16px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  .vera-btn-google {
+    width: 100%;
+    background: #ffffff;
+    color: #0f172a;
+    font-weight: 600;
+    padding: 11px 16px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+</style>
+
+<div id="vera-auth-overlay">
+  <div class="vera-auth-card">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div style="width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg,#2563eb,#06b6d4); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:20px; color:#fff;">V</div>
+        <div>
+          <h2 style="margin:0; font-size:18px; font-weight:700;">Tài Khoản Độc Lập Vera</h2>
+          <p style="margin:0; font-size:12px; color:#94a3b8;">Mỗi tài khoản có UID, bạn bè & tin nhắn riêng biệt</p>
+        </div>
+      </div>
+      <button type="button" onclick="window.VeraSystem.closeAuthModal()" style="background:#1e293b; border:none; color:#94a3b8; width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:16px;">✕</button>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; background:#020617; padding:5px; border-radius:12px; margin-bottom:18px;">
+      <button type="button" id="vera-tab-login-btn" onclick="window.VeraSystem.switchAuthTab('login')" style="padding:8px; border-radius:9px; border:none; font-weight:600; font-size:13px; cursor:pointer; background:#2563eb; color:#fff;">Đăng nhập / Google</button>
+      <button type="button" id="vera-tab-reg-btn" onclick="window.VeraSystem.switchAuthTab('register')" style="padding:8px; border-radius:9px; border:none; font-weight:600; font-size:13px; cursor:pointer; background:transparent; color:#94a3b8;">Đăng ký thông tin</button>
+    </div>
+
+    <div id="vera-auth-msg" style="display:none; padding:10px 12px; border-radius:10px; font-size:12px; margin-bottom:14px;"></div>
+
+    <!-- FORM 1: ĐĂNG NHẬP & LIÊN KẾT GOOGLE -->
+    <div id="vera-form-login">
+      <button type="button" class="vera-btn-google" onclick="window.VeraSystem.openGoogleChooser()">
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Tiếp tục với Google (Tạo UID Google độc lập)
+      </button>
+
+      <div id="vera-google-box" style="display:none; margin-top:12px; padding:14px; background:#1e293b; border:1px solid #334155; border-radius:14px;">
+        <p style="margin:0 0 8px 0; font-size:12px; font-weight:600; color:#93c5fd;">Liên kết tài khoản Google cá nhân:</p>
+        <input id="vera-gg-email" type="email" class="vera-input" placeholder="Nhập Gmail của bạn (vd: minhanh@gmail.com)" style="margin-bottom:8px;">
+        <input id="vera-gg-name" type="text" class="vera-input" placeholder="Tên hiển thị trên Google (vd: Minh Anh)" style="margin-bottom:10px;">
+        <button type="button" class="vera-btn-primary" onclick="window.VeraSystem.confirmGoogleLogin()">Xác nhận Liên kết & Đăng nhập</button>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:10px; margin:16px 0; color:#64748b; font-size:12px;">
+        <div style="flex:1; height:1px; background:#1e293b;"></div>
+        <span>hoặc đăng nhập tài khoản Vera</span>
+        <div style="flex:1; height:1px; background:#1e293b;"></div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <input id="vera-login-email" type="text" class="vera-input" placeholder="Email hoặc tên đăng nhập">
+        <input id="vera-login-pass" type="password" class="vera-input" placeholder="Mật khẩu">
+        <button type="button" class="vera-btn-primary" onclick="window.VeraSystem.loginWithPassword()">Đăng nhập</button>
+      </div>
+
+      <div style="margin-top:18px; border-top:1px solid #1e293b; padding-top:14px;">
+        <p style="margin:0 0 8px 0; font-size:12px; font-weight:600; color:#94a3b8;">Chuyển nhanh tài khoản độc lập trên máy:</p>
+        <div id="vera-saved-accounts-list" style="display:flex; flex-direction:column; gap:8px; max-height:175px; overflow-y:auto;"></div>
+      </div>
+    </div>
+
+    <!-- FORM 2: ĐĂNG KÝ THÔNG TIN CÁ NHÂN CƠ BẢN -->
+    <div id="vera-form-register" style="display:none;">
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div>
+          <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Họ và tên *</label>
+          <input id="vera-reg-name" type="text" class="vera-input" placeholder="Ví dụ: Lê Hoàng Nam">
+        </div>
+        <div>
+          <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Email hoặc Tên đăng nhập *</label>
+          <input id="vera-reg-email" type="text" class="vera-input" placeholder="Ví dụ: hoangnam@gmail.com">
+        </div>
+        <div>
+          <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Mật khẩu *</label>
+          <input id="vera-reg-pass" type="password" class="vera-input" placeholder="Tối thiểu 6 ký tự">
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <div>
+            <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Ngày sinh</label>
+            <input id="vera-reg-dob" type="date" class="vera-input" value="2005-05-15">
+          </div>
+          <div>
+            <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Giới tính</label>
+            <select id="vera-reg-gender" class="vera-input">
+              <option value="Nam">Nam</option>
+              <option value="Nữ">Nữ</option>
+              <option value="Khác">Khác</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Giới thiệu bản thân</label>
+          <input id="vera-reg-bio" type="text" class="vera-input" placeholder="Sở thích, trường học hoặc lời chào...">
+        </div>
+        <button type="button" class="vera-btn-primary" style="margin-top:6px;" onclick="window.VeraSystem.registerNewAccount()">Tạo Tài Khoản Độc Lập Mới</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const STORAGE_ACCOUNTS = 'vera_independent_accounts_v1';
+  const STORAGE_ACTIVE_UID = 'vera_active_uid_v1';
+  const STORAGE_MESSAGES = 'vera_private_messages_v1';
+  let currentActiveTab = 'feed';
+  let activeChatPeerId = null;
+
+  // ==================== PHẦN 1: DÒ ĐÚNG 3 CỘT & 4 TAB TRỰC TIẾP ====================
+  function findSmallestBoxWithText(keyword) {
+    const all = Array.from(document.querySelectorAll('div, section, aside, main')).filter(el => {
+      if (el.closest('#vera-auth-overlay') || el.closest('nav') || el.closest('header')) return false;
+      return (el.textContent || '').includes(keyword);
+    });
+    if (all.length === 0) return null;
+    all.sort((a, b) => (a.textContent || '').length - (b.textContent || '').length);
+    return all[0];
+  }
+
+  function findCommonAncestor(el1, el2) {
+    if (!el1 || !el2) return null;
+    let p = el1.parentElement;
+    while (p && p !== document.body) {
+      if (p.contains(el2)) return p;
+      p = p.parentElement;
+    }
+    return null;
+  }
+
+  function getDirectChildContaining(parent, target) {
+    if (!parent || !target || !parent.contains(target)) return null;
+    let cur = target;
+    while (cur && cur.parentElement !== parent) {
+      cur = cur.parentElement;
+    }
+    return cur;
+  }
+
+  function detectStructure() {
+    const leftAnchor = findSmallestBoxWithText('Quy Trình Kiểm Duyệt Gemini');
+    const rightAnchor = findSmallestBoxWithText('GEMINI AI MONITOR');
+    const feedAnchor = findSmallestBoxWithText('Tải Video') || document.querySelector('textarea');
+
+    const gridRow = findCommonAncestor(leftAnchor, rightAnchor) || findCommonAncestor(leftAnchor, feedAnchor);
+    if (!gridRow) return null;
+
+    const leftCol = getDirectChildContaining(gridRow, leftAnchor);
+    const rightCol = getDirectChildContaining(gridRow, rightAnchor);
+    const centerCol = getDirectChildContaining(gridRow, feedAnchor) ||
+      Array.from(gridRow.children).find(ch => ch !== leftCol && ch !== rightCol);
+
+    if (!centerCol) return null;
+
+    // Lấy trực tiếp panel con của centerCol chứa từng tab
+    const findDirectTabPanel = (keywords, idRegex) => {
+      const byId = Array.from(centerCol.querySelectorAll('[id]')).find(el => idRegex.test(el.id));
+      if (byId) return getDirectChildContaining(centerCol, byId) || byId;
+      const anchor = Array.from(centerCol.querySelectorAll('div, section')).find(el => {
+        const tc = el.textContent || '';
+        return keywords.some(k => tc.includes(k));
+      });
+      return anchor ? getDirectChildContaining(centerCol, anchor) : null;
+    };
+
+    const panelFeed = findDirectTabPanel(['Tải Video', 'Đăng Bài'], /feed/i);
+    const panelFriends = findDirectTabPanel(['Danh Sách Bạn Bè', 'Lời Mời Kết Bạn'], /friend/i);
+    const panelMessenger = findDirectTabPanel(['Tin nhắn trực tiếp', 'Đoạn chat'], /messenger|chat/i);
+    const panelAdmin = findDirectTabPanel(['Trung tâm Kiểm duyệt', 'Hàng đợi Kiểm duyệt', 'Bài viết bị chặn'], /admin|moderat/i);
+
+    return { gridRow, leftCol, centerCol, rightCol, panelFeed, panelFriends, panelMessenger, panelAdmin };
+  }
+
+  function ensureFallbackPanel(centerCol, tabName) {
+    const id = `vera-fallback-${tabName}`;
+    let box = document.getElementById(id);
+    if (!box) {
+      box = document.createElement('div');
+      box.id = id;
+      centerCol.appendChild(box);
+    }
+    if (tabName === 'friends') renderFallbackFriends(box);
+    if (tabName === 'messenger') renderFallbackMessenger(box);
+    if (tabName === 'admin') renderFallbackAdmin(box);
+    return box;
+  }
+
+  function renderFallbackFriends(box) {
+    const map = getAccountsMap();
+    const myUid = localStorage.getItem(STORAGE_ACTIVE_UID) || 'admin';
+    const me = map[myUid] || { friends: [] };
+    if (!Array.isArray(me.friends)) me.friends = [];
+    const others = Object.values(map).filter(u => u.id !== myUid);
+
+    box.innerHTML = `
+      <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:20px;color:#f8fafc;">
+        <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px;">
+          <div>
+            <h3 style="margin:0;font-size:18px;font-weight:700;">👥 Bạn Bè & Kết Nối Cộng Đồng Vera</h3>
+            <p style="margin:4px 0 0;font-size:12px;color:#94a3b8;">Danh sách bạn bè riêng biệt của <b>${me.name || myUid}</b> (${me.friends.length} bạn bè)</p>
+          </div>
+          <button type="button" onclick="window.VeraSystem.openAuthModal()" style="padding:8px 12px;border-radius:10px;background:#1e293b;border:1px solid #3b82f6;color:#93c5fd;font-size:12px;font-weight:600;cursor:pointer;">+ Tạo thêm tài khoản</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;">
+          ${others.map(u => {
+            const isFriend = me.friends.includes(u.id);
+            return `
+              <div style="background:#020617;border:1px solid #1e293b;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <img src="${u.avatar}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;background:#1e293b;">
+                  <div style="min-width:0;">
+                    <div style="font-size:14px;font-weight:700;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.name}</div>
+                    <div style="font-size:11px;color:#64748b;">${u.handle} • ${u.provider === 'google' ? 'Google UID' : 'Vera UID'}</div>
+                  </div>
+                </div>
+                <p style="margin:0;font-size:12px;color:#94a3b8;min-height:32px;">${u.bio || 'Thành viên Vera'}</p>
+                <div style="display:flex;gap:8px;">
+                  <button type="button" onclick="window.VeraSystem.toggleFriend('${u.id}')" style="flex:1;padding:8px;border-radius:10px;border:none;font-size:12px;font-weight:600;cursor:pointer;background:${isFriend ? '#1e293b' : '#2563eb'};color:${isFriend ? '#94a3b8' : '#fff'};">
+                    ${isFriend ? '✓ Đã kết bạn' : '+ Kết bạn'}
+                  </button>
+                  <button type="button" onclick="window.VeraSystem.openChatWith('${u.id}')" style="padding:8px 12px;border-radius:10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:12px;font-weight:600;cursor:pointer;">
+                    💬 Nhắn tin
+                  </button>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderFallbackMessenger(box) {
+    const map = getAccountsMap();
+    const myUid = localStorage.getItem(STORAGE_ACTIVE_UID) || 'admin';
+    const peers = Object.values(map).filter(u => u.id !== myUid);
+    if (!activeChatPeerId || !map[activeChatPeerId] || activeChatPeerId === myUid) {
+      activeChatPeerId = peers[0]?.id || null;
+    }
+    const peer = activeChatPeerId ? map[activeChatPeerId] : null;
+    const allMsgs = JSON.parse(localStorage.getItem(STORAGE_MESSAGES) || '[]');
+    const thread = peer ? allMsgs.filter(m => (m.from === myUid && m.to === peer.id) || (m.from === peer.id && m.to === myUid)) : [];
+
+    box.innerHTML = `
+      <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;overflow:hidden;display:grid;grid-template-columns:230px minmax(0,1fr);min-height:480px;color:#f8fafc;">
+        <div style="border-right:1px solid #1e293b;background:#020617;padding:12px;">
+          <h3 style="margin:0 0 12px;font-size:15px;font-weight:700;padding:4px 6px;">💬 Tin nhắn riêng tư</h3>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${peers.map(u => `
+              <div onclick="window.VeraSystem.openChatWith('${u.id}')" style="display:flex;align-items:center;gap:10px;padding:9px;border-radius:12px;cursor:pointer;background:${u.id === activeChatPeerId ? '#1e293b' : 'transparent'};">
+                <img src="${u.avatar}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;">
+                <div style="min-width:0;">
+                  <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.name}</div>
+                  <div style="font-size:11px;color:#64748b;">${u.handle}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;height:480px;">
+          ${peer ? `
+            <div style="padding:14px 18px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:10px;">
+              <img src="${peer.avatar}" style="width:36px;height:36px;border-radius:50%;">
+              <div>
+                <div style="font-size:14px;font-weight:700;">${peer.name}</div>
+                <div style="font-size:11px;color:#34d399;">● Trò chuyện bảo mật giữa 2 UID độc lập</div>
+              </div>
+            </div>
+            <div id="vera-chat-scroll" style="flex:1;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+              ${thread.length === 0 ? '<p style="text-align:center;color:#64748b;font-size:13px;margin-top:40px;">Hãy gửi lời chào đầu tiên tới ' + peer.name + '!</p>' :
+                thread.map(m => {
+                  const mine = m.from === myUid;
+                  return `
+                    <div style="align-self:${mine ? 'flex-end' : 'flex-start'};max-width:72%;background:${mine ? '#2563eb' : '#1e293b'};padding:10px 14px;border-radius:14px;font-size:13px;line-height:1.45;">
+                      <div>${m.text}</div>
+                      <div style="font-size:10px;opacity:0.7;margin-top:4px;text-align:right;">${m.time}</div>
+                    </div>
+                  `;
+                }).join('')}
+            </div>
+            <form onsubmit="event.preventDefault();window.VeraSystem.sendPrivateMessage();" style="padding:12px;border-top:1px solid #1e293b;display:flex;gap:8px;">
+              <input id="vera-chat-input" type="text" class="vera-input" placeholder="Nhập tin nhắn gửi tới ${peer.name}...">
+              <button type="submit" style="padding:10px 18px;border-radius:12px;border:none;background:#2563eb;color:#fff;font-weight:600;cursor:pointer;">Gửi</button>
+            </form>
+          ` : '<div style="padding:24px;color:#94a3b8;">Chưa có người dùng khác để nhắn tin.</div>'}
+        </div>
+      </div>
+    `;
+    const scroll = document.getElementById('vera-chat-scroll');
+    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+  }
+
+  function renderFallbackAdmin(box) {
+    const blocked = (typeof blockedPosts !== 'undefined' && Array.isArray(blockedPosts)) ? blockedPosts : [];
+    box.innerHTML = `
+      <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:20px;color:#f8fafc;">
+        <h3 style="margin:0 0 6px;font-size:18px;font-weight:700;">🛡️ Trung Tâm Kiểm Soát & Hậu Kiểm AI Vera</h3>
+        <p style="margin:0 0 16px;font-size:12px;color:#94a3b8;">Tự động chặn video bạo lực, máu me, 18+ bằng cơ chế Fail-Closed trước khi hiển thị công khai.</p>
+        ${blocked.length === 0 ? '<div style="padding:24px;background:#020617;border-radius:12px;text-align:center;color:#94a3b8;font-size:13px;">Hiện chưa có bài viết vi phạm nào trong hàng đợi xử lý.</div>' :
+          blocked.map((item, idx) => `
+            <div style="background:#020617;border:1px solid #7f1d1d;border-radius:12px;padding:14px;margin-bottom:10px;">
+              <div style="font-size:13px;font-weight:700;color:#fca5a5;">⚠️ Vi phạm bị chặn #${idx + 1}: ${item.reason || 'Phát hiện nội dung bạo lực / nhạy cảm'}</div>
+              <div style="font-size:12px;color:#94a3b8;margin-top:4px;">Người đăng: ${item.authorName || 'Người dùng'} • Điểm rủi ro: ${item.riskScore || 95}%</div>
+            </div>
+          `).join('')}
+      </div>
+    `;
+  }
+
+  function applyCleanLayout(tabName) {
+    if (tabName) currentActiveTab = tabName;
+    const struct = detectStructure();
+    if (!struct) return;
+
+    const { gridRow, leftCol, centerCol, rightCol, panelFeed, panelFriends, panelMessenger, panelAdmin } = struct;
+
+    gridRow.classList.remove('vera-grid-3col', 'vera-grid-2col');
+    gridRow.classList.add(currentActiveTab === 'feed' ? 'vera-grid-3col' : 'vera-grid-2col');
+
+    if (leftCol) leftCol.classList.add('vera-zone-left');
+    if (centerCol) centerCol.classList.add('vera-zone-center');
+
+    if (rightCol) {
+      rightCol.classList.add('vera-zone-right');
+      if (currentActiveTab === 'feed') {
+        rightCol.classList.remove('hidden', 'vera-panel-hidden');
+        rightCol.style.display = 'block';
+      } else {
+        rightCol.classList.add('vera-panel-hidden');
+        rightCol.style.display = 'none';
+      }
+    }
+
+    const panels = {
+      feed: panelFeed,
+      friends: (panelFriends && panelFriends !== panelFeed) ? panelFriends : ensureFallbackPanel(centerCol, 'friends'),
+      messenger: (panelMessenger && panelMessenger !== panelFeed) ? panelMessenger : ensureFallbackPanel(centerCol, 'messenger'),
+      admin: (panelAdmin && panelAdmin !== panelFeed) ? panelAdmin : ensureFallbackPanel(centerCol, 'admin')
+    };
+
+    if (currentActiveTab === 'friends' && panels.friends.id === 'vera-fallback-friends') renderFallbackFriends(panels.friends);
+    if (currentActiveTab === 'messenger' && panels.messenger.id === 'vera-fallback-messenger') renderFallbackMessenger(panels.messenger);
+    if (currentActiveTab === 'admin' && panels.admin.id === 'vera-fallback-admin') renderFallbackAdmin(panels.admin);
+
+    Object.entries(panels).forEach(([key, el]) => {
+      if (!el) return;
+      if (key === currentActiveTab) {
+        el.classList.remove('hidden', 'vera-panel-hidden');
+        el.classList.add('vera-panel-active');
+        el.style.display = 'block';
+      } else {
+        el.classList.remove('vera-panel-active');
+        el.classList.add('vera-panel-hidden');
+        el.style.display = 'none';
+      }
+    });
+  }
+
+  function hookTabNavigation() {
+    if (typeof window.switchTab === 'function' && !window.switchTab._veraWrapped) {
+      const origSwitch = window.switchTab;
+      window.switchTab = function (tab, ...args) {
+        try { origSwitch.apply(this, [tab, ...args]); } catch (e) {}
+        applyCleanLayout(tab);
+        setTimeout(() => applyCleanLayout(tab), 30);
+      };
+      window.switchTab._veraWrapped = true;
+    }
+
+    document.addEventListener('click', (e) => {
+      // Bắt nút mở Tài khoản / Đổi UID ở mức ưu tiên cao nhất
+      const authTrigger = e.target.closest('#vera-nav-account-btn');
+      if (authTrigger || (e.target.textContent || '').includes('Tài khoản / Đổi UID')) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.VeraSystem.openAuthModal();
+        return;
+      }
+
+      const btn = e.target.closest('button, a, [role="button"]');
+      if (!btn || btn.closest('#vera-auth-overlay')) return;
+      const txt = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+      const onclickAttr = btn.getAttribute('onclick') || '';
+
+      if (onclickAttr.includes("'feed'") || txt === 'Bảng tin' || txt === 'Bảng tin chính') {
+        setTimeout(() => applyCleanLayout('feed'), 15);
+      } else if (onclickAttr.includes("'friends'") || txt.startsWith('Bạn bè') || txt === 'Lời mời kết bạn') {
+        setTimeout(() => applyCleanLayout('friends'), 15);
+      } else if (onclickAttr.includes("'messenger'") || txt.includes('Messenger')) {
+        setTimeout(() => applyCleanLayout('messenger'), 15);
+      } else if (onclickAttr.includes("'admin'") || txt.includes('Quản trị AI') || txt.includes('Kiểm duyệt AI')) {
+        setTimeout(() => applyCleanLayout('admin'), 15);
+      }
+    }, true);
+  }
+
+  // ==================== PHẦN 2: HỆ THỐNG TÀI KHOẢN ĐỘC LẬP & GOOGLE ====================
+  function getAccountsMap() {
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_ACCOUNTS) || '{}'); } catch (e) { saved = {}; }
+
+    if (typeof USERS !== 'undefined' && USERS) {
+      Object.keys(USERS).forEach(uid => {
+        if (!saved[uid]) {
+          saved[uid] = {
+            id: uid, uid: uid,
+            name: (USERS[uid].name || uid).replace(/SafeBook/gi, 'Vera'),
+            handle: (USERS[uid].handle || ('@' + uid)).replace(/safebook/gi, 'vera'),
+            email: USERS[uid].email || `${uid}@vera.vn`,
+            avatar: USERS[uid].avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${uid}`,
+            bio: USERS[uid].bio || 'Thành viên cộng đồng Vera',
+            provider: uid === 'admin' ? 'system' : 'local',
+            role: uid === 'admin' ? 'admin' : 'user',
+            friends: Array.isArray(USERS[uid].friends) ? [...USERS[uid].friends] : [],
+            password: ''
+          };
+        }
+        USERS[uid] = { ...USERS[uid], ...saved[uid] };
+      });
+    }
+
+    Object.keys(saved).forEach(uid => {
+      if (typeof USERS !== 'undefined' && USERS && !USERS[uid]) {
+        USERS[uid] = saved[uid];
+      }
+    });
+    return saved;
+  }
+
+  function saveAccountsMap(map) {
+    localStorage.setItem(STORAGE_ACCOUNTS, JSON.stringify(map));
+    if (typeof USERS !== 'undefined' && USERS) {
+      Object.keys(map).forEach(uid => { USERS[uid] = { ...(USERS[uid] || {}), ...map[uid] }; });
+    }
+  }
+
+  function applyActiveUserToUI(user) {
+    if (!user) return;
+    localStorage.setItem(STORAGE_ACTIVE_UID, user.id);
+
+    try {
+      if (typeof currentUserId !== 'undefined') currentUserId = user.id;
+      if (typeof currentUser !== 'undefined') currentUser = (typeof USERS !== 'undefined' && USERS[user.id]) ? USERS[user.id] : user;
+    } catch (e) {}
+
+    if (typeof window.selectUser === 'function') { try { window.selectUser(user.id); } catch (e) {} }
+    if (typeof window.switchUser === 'function') { try { window.switchUser(user.id); } catch (e) {} }
+
+    const leftHandle = Array.from(document.querySelectorAll('p, span, div')).find(el => el.children.length === 0 && el.textContent.trim().startsWith('@'));
+    if (leftHandle) {
+      leftHandle.textContent = user.handle;
+      const nameEl = leftHandle.previousElementSibling;
+      if (nameEl) {
+        nameEl.innerHTML = `${user.name} ${user.provider === 'google' ? '<span style="font-size:10px;background:#1d4ed8;color:#fff;padding:1px 6px;border-radius:99px;margin-left:4px;">Google</span>' : ''}`;
+      }
+      const card = leftHandle.closest('div')?.parentElement;
+      const avatarImg = card?.querySelector('img');
+      if (avatarImg && user.avatar) avatarImg.src = user.avatar;
+    }
+
+    const navImgs = document.querySelectorAll('nav img, header img');
+    if (navImgs.length > 0 && user.avatar) {
+      navImgs[navImgs.length - 1].src = user.avatar;
+    }
+    setTimeout(() => applyCleanLayout(currentActiveTab), 30);
+  }
+
+  function renderSavedAccountsList() {
+    const listEl = document.getElementById('vera-saved-accounts-list');
+    if (!listEl) return;
+    const map = getAccountsMap();
+    const activeUid = localStorage.getItem(STORAGE_ACTIVE_UID) || 'admin';
+    listEl.innerHTML = Object.values(map).map(u => {
+      const isCurrent = u.id === activeUid;
+      const badge = u.provider === 'google'
+        ? '<span style="font-size:10px;background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:6px;font-weight:700;">Google</span>'
+        : (u.role === 'admin'
+          ? '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:6px;font-weight:700;">Admin</span>'
+          : '<span style="font-size:10px;background:#1e293b;color:#94a3b8;padding:2px 6px;border-radius:6px;">UID Riêng</span>');
+      return `
+        <div onclick="window.VeraSystem.quickSwitchAccount('${u.id}')" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:10px;background:${isCurrent ? '#172554' : '#020617'};border:1px solid ${isCurrent ? '#3b82f6' : '#1e293b'};cursor:pointer;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <img src="${u.avatar}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;background:#1e293b;">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:#f8fafc;">${u.name} ${badge}</div>
+              <div style="font-size:11px;color:#64748b;">${u.email || u.handle} • UID: ${u.id.slice(0, 10)}</div>
+            </div>
+          </div>
+          <span style="font-size:11px;font-weight:600;color:${isCurrent ? '#60a5fa' : '#94a3b8'};">${isCurrent ? 'Đang dùng' : 'Chọn →'}</span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function showAuthMsg(text, isError) {
+    const box = document.getElementById('vera-auth-msg');
+    if (!box) return;
+    box.style.display = 'block';
+    box.style.background = isError ? 'rgba(127, 29, 29, 0.7)' : 'rgba(6, 78, 59, 0.7)';
+    box.style.border = isError ? '1px solid #ef4444' : '1px solid #10b981';
+    box.style.color = isError ? '#fecaca' : '#a7f3d0';
+    box.textContent = text;
+  }
+
+  function injectAccountButtonToNavbar() {
+    const oldBtn = document.getElementById('vera-nav-account-btn');
+    if (oldBtn) oldBtn.remove();
+    const nav = document.querySelector('nav') || document.querySelector('header');
+    if (!nav) return;
+    const btn = document.createElement('button');
+    btn.id = 'vera-nav-account-btn';
+    btn.type = 'button';
+    btn.innerHTML = '👤 Tài khoản / Đổi UID';
+    btn.style.cssText = 'position:relative;z-index:9999;pointer-events:auto;margin-left:10px;padding:7px 13px;border-radius:999px;background:#1e293b;border:1px solid #3b82f6;color:#93c5fd;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    btn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      window.VeraSystem.openAuthModal();
+    };
+    nav.appendChild(btn);
+  }
+
+  function rebrandToVera() {
+    document.title = document.title.replace(/SafeBook/gi, 'Vera');
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeValue && /SafeBook/i.test(node.nodeValue)) {
+        node.nodeValue = node.nodeValue.replace(/SafeBook/gi, 'Vera');
+      }
+    }
+    document.querySelectorAll('input[placeholder]').forEach(inp => {
+      if (/SafeBook/i.test(inp.placeholder)) inp.placeholder = inp.placeholder.replace(/SafeBook/gi, 'Vera');
+    });
+  }
+
+  window.VeraSystem = {
+    openAuthModal() {
+      const overlay = document.getElementById('vera-auth-overlay');
+      if (!overlay) return;
+      renderSavedAccountsList();
+      const msg = document.getElementById('vera-auth-msg');
+      if (msg) msg.style.display = 'none';
+      overlay.style.display = 'flex';
+    },
+    closeAuthModal() {
+      const overlay = document.getElementById('vera-auth-overlay');
+      if (overlay) overlay.style.display = 'none';
+    },
+    switchAuthTab(tab) {
+      const isLogin = tab === 'login';
+      document.getElementById('vera-form-login').style.display = isLogin ? 'block' : 'none';
+      document.getElementById('vera-form-register').style.display = isLogin ? 'none' : 'block';
+      document.getElementById('vera-tab-login-btn').style.background = isLogin ? '#2563eb' : 'transparent';
+      document.getElementById('vera-tab-login-btn').style.color = isLogin ? '#fff' : '#94a3b8';
+      document.getElementById('vera-tab-reg-btn').style.background = !isLogin ? '#2563eb' : 'transparent';
+      document.getElementById('vera-tab-reg-btn').style.color = !isLogin ? '#fff' : '#94a3b8';
+      document.getElementById('vera-auth-msg').style.display = 'none';
+    },
+    openGoogleChooser() {
+      const box = document.getElementById('vera-google-box');
+      box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    },
+    confirmGoogleLogin() {
+      const email = document.getElementById('vera-gg-email').value.trim().toLowerCase();
+      const rawName = document.getElementById('vera-gg-name').value.trim();
+      if (!email || !email.includes('@')) return showAuthMsg('Vui lòng nhập địa chỉ Gmail hợp lệ để liên kết!', true);
+      const map = getAccountsMap();
+      let existing = Object.values(map).find(u => u.email === email);
+      if (!existing) {
+        const uid = 'gg_' + btoa(email).replace(/[^a-zA-Z0-9]/g, '').slice(0, 12);
+        const displayName = rawName || email.split('@')[0];
+        existing = {
+          id: uid, uid: uid, name: displayName,
+          handle: '@' + email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, ''),
+          email: email,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(email)}`,
+          bio: 'Tài khoản liên kết Google trên Vera',
+          provider: 'google', role: 'user', friends: [], password: ''
+        };
+        map[uid] = existing;
+        saveAccountsMap(map);
+      }
+      applyActiveUserToUI(existing);
+      renderSavedAccountsList();
+      showAuthMsg(`Đã liên kết Google & đăng nhập: ${existing.name}`, false);
+      setTimeout(() => this.closeAuthModal(), 600);
+    },
+    registerNewAccount() {
+      const name = document.getElementById('vera-reg-name').value.trim();
+      const email = document.getElementById('vera-reg-email').value.trim().toLowerCase();
+      const pass = document.getElementById('vera-reg-pass').value;
+      const dob = document.getElementById('vera-reg-dob').value;
+      const gender = document.getElementById('vera-reg-gender').value;
+      const bio = document.getElementById('vera-reg-bio').value.trim();
+
+      if (!name || !email) return showAuthMsg('Vui lòng nhập đầy đủ Họ tên và Email/Tên đăng nhập!', true);
+      if (pass.length < 6) return showAuthMsg('Mật khẩu cần tối thiểu 6 ký tự!', true);
+
+      const map = getAccountsMap();
+      if (Object.values(map).some(u => u.email === email)) return showAuthMsg('Email hoặc tên đăng nhập này đã tồn tại!', true);
+
+      const uid = 'usr_' + Date.now().toString(36);
+      const slug = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') || uid;
+      const newUser = {
+        id: uid, uid: uid, name: name, handle: '@' + slug, email: email,
+        dob: dob, gender: gender, bio: bio || `Xin chào, mình là ${name}!`,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(uid)}`,
+        provider: 'local', role: 'user', friends: [], password: pass
+      };
+
+      map[uid] = newUser;
+      saveAccountsMap(map);
+      applyActiveUserToUI(newUser);
+      renderSavedAccountsList();
+      showAuthMsg(`Tạo tài khoản độc lập thành công: ${name}`, false);
+      setTimeout(() => this.closeAuthModal(), 600);
+    },
+    loginWithPassword() {
+      const email = document.getElementById('vera-login-email').value.trim().toLowerCase();
+      const pass = document.getElementById('vera-login-pass').value;
+      const map = getAccountsMap();
+      const user = Object.values(map).find(u => u.email === email || u.handle.toLowerCase() === '@' + email);
+      if (!user) return showAuthMsg('Không tìm thấy tài khoản này. Bạn có thể chuyển sang tab Đăng ký!', true);
+      if (user.password && user.password !== pass) return showAuthMsg('Mật khẩu không chính xác!', true);
+      applyActiveUserToUI(user);
+      renderSavedAccountsList();
+      showAuthMsg(`Đăng nhập thành công: ${user.name}`, false);
+      setTimeout(() => this.closeAuthModal(), 500);
+    },
+    quickSwitchAccount(uid) {
+      const map = getAccountsMap();
+      if (!map[uid]) return;
+      applyActiveUserToUI(map[uid]);
+      renderSavedAccountsList();
+      this.closeAuthModal();
+    },
+    toggleFriend(targetUid) {
+      const map = getAccountsMap();
+      const myUid = localStorage.getItem(STORAGE_ACTIVE_UID) || 'admin';
+      if (!map[myUid] || !map[targetUid]) return;
+      if (!Array.isArray(map[myUid].friends)) map[myUid].friends = [];
+      if (!Array.isArray(map[targetUid].friends)) map[targetUid].friends = [];
+
+      const idx = map[myUid].friends.indexOf(targetUid);
+      if (idx === -1) {
+        map[myUid].friends.push(targetUid);
+        if (!map[targetUid].friends.includes(myUid)) map[targetUid].friends.push(myUid);
+      } else {
+        map[myUid].friends.splice(idx, 1);
+      }
+      saveAccountsMap(map);
+      applyCleanLayout('friends');
+    },
+    openChatWith(targetUid) {
+      activeChatPeerId = targetUid;
+      applyCleanLayout('messenger');
+    },
+    sendPrivateMessage() {
+      const inp = document.getElementById('vera-chat-input');
+      if (!inp || !inp.value.trim() || !activeChatPeerId) return;
+      const text = inp.value.trim();
+      const myUid = localStorage.getItem(STORAGE_ACTIVE_UID) || 'admin';
+      const allMsgs = JSON.parse(localStorage.getItem(STORAGE_MESSAGES) || '[]');
+      const now = new Date();
+      const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      allMsgs.push({ from: myUid, to: activeChatPeerId, text, time });
+      localStorage.setItem(STORAGE_MESSAGES, JSON.stringify(allMsgs));
+      applyCleanLayout('messenger');
+    }
+  };
+
+  function initVera() {
+    rebrandToVera();
+    injectAccountButtonToNavbar();
+    hookTabNavigation();
+    applyCleanLayout('feed');
+
+    const map = getAccountsMap();
+    const savedUid = localStorage.getItem(STORAGE_ACTIVE_UID);
+    if (savedUid && map[savedUid]) {
+      applyActiveUserToUI(map[savedUid]);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', initVera);
+  } else {
+    initVera();
+  }
+})();
+</script>
+</body>
+</html>
