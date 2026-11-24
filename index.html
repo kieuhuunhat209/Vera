@@ -2724,5 +2724,368 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
   }
 })();
 </script>
+<!-- ==================== VERA ADMIN-SYNCED SHARED API KEY ==================== -->
+<script>
+(function () {
+  const SHARED_KEY_STORAGE = 'vera_shared_gemini_key_v1';
+
+  function readAnySavedKey() {
+    const shared = (localStorage.getItem(SHARED_KEY_STORAGE) || '').trim();
+    if (shared) return shared;
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || '';
+      if (/api.?key|gemini/i.test(k) && k !== SHARED_KEY_STORAGE) {
+        const val = (localStorage.getItem(k) || '').trim();
+        if (val.startsWith('AIza') || val.startsWith('AQ.')) {
+          localStorage.setItem(SHARED_KEY_STORAGE, val);
+          return val;
+        }
+      }
+    }
+    return '';
+  }
+
+  function syncKeyToAllStorages(keyVal) {
+    const clean = (keyVal || '').trim();
+    if (!clean) return;
+    localStorage.setItem(SHARED_KEY_STORAGE, clean);
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || '';
+      if (/api.?key|gemini/i.test(k) && k !== SHARED_KEY_STORAGE) {
+        localStorage.setItem(k, clean);
+      }
+    }
+
+    // Tự điền sẵn vào mọi ô nhập API key nếu có trên giao diện
+    document.querySelectorAll('input[type="password"], input[type="text"]').forEach(inp => {
+      const ph = (inp.placeholder || '').toLowerCase();
+      const lbl = (inp.id || inp.name || '').toLowerCase();
+      if (ph.includes('api') || ph.includes('key') || lbl.includes('api') || lbl.includes('key')) {
+        if (!inp.value.trim()) inp.value = clean;
+      }
+    });
+  }
+
+  // Bọc fetchGeminiSmart để luôn tự động lấy key đồng bộ của Admin khi tài khoản khác đăng bài
+  function wrapFetchGeminiSmartWithSharedKey() {
+    if (typeof window.fetchGeminiSmart === 'function' && !window.fetchGeminiSmart._veraSharedWrapped) {
+      const origFn = window.fetchGeminiSmart;
+      window.fetchGeminiSmart = async function (apiKey, payload, ...rest) {
+        const effectiveKey = (apiKey || '').trim() || readAnySavedKey();
+        if (!effectiveKey) {
+          return {
+            ok: false,
+            error: 'Admin chưa cấu hình Gemini API Key đồng bộ trên hệ thống.'
+          };
+        }
+        syncKeyToAllStorages(effectiveKey);
+        return await origFn.apply(this, [effectiveKey, payload, ...rest]);
+      };
+      window.fetchGeminiSmart._veraSharedWrapped = true;
+    }
+  }
+
+  // Theo dõi khi Admin lưu key mới trên giao diện để đồng bộ ngay lập tức
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const txt = (btn.textContent || '').toLowerCase();
+    if (txt.includes('lưu') || txt.includes('kiểm tra')) {
+      setTimeout(() => {
+        document.querySelectorAll('input').forEach(inp => {
+          const val = (inp.value || '').trim();
+          if (val.startsWith('AIza') || val.startsWith('AQ.')) {
+            syncKeyToAllStorages(val);
+          }
+        });
+      }, 100);
+    }
+  }, true);
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const existingKey = readAnySavedKey();
+    if (existingKey) syncKeyToAllStorages(existingKey);
+    wrapFetchGeminiSmartWithSharedKey();
+    setTimeout(wrapFetchGeminiSmartWithSharedKey, 400);
+  });
+})();
+</script>
+<!-- ==================== VERA ONE-WAY SEND-ONLY MESSAGING & SOCIAL CONNECT ==================== -->
+<script>
+(function () {
+  const SENDER_ONLY_MSGS_KEY = 'vera_sender_only_messages_v1';
+  const FRIENDS_GRAPH_KEY = 'vera_friends_graph_v1';
+  const ACTIVE_UID_KEY = 'vera_active_uid_v2';
+  const ACCOUNTS_KEY = 'vera_independent_accounts_v2';
+
+  let currentPeerUid = null;
+
+  function safeParse(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  function getCurrentUid() {
+    return localStorage.getItem(ACTIVE_UID_KEY) || (typeof currentUserId !== 'undefined' ? currentUserId : null);
+  }
+
+  function getAllUsers() {
+    const map = safeParse(ACCOUNTS_KEY, {});
+    if (typeof USERS !== 'undefined' && USERS) {
+      Object.keys(USERS).forEach(uid => {
+        if (!map[uid]) {
+          map[uid] = {
+            id: uid,
+            uid: uid,
+            name: USERS[uid].name || uid,
+            handle: USERS[uid].handle || ('@' + uid),
+            avatar: USERS[uid].avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(uid)}`,
+            bio: USERS[uid].bio || 'Thành viên cộng đồng Vera',
+            role: uid === 'admin' ? 'admin' : 'user',
+            friends: Array.isArray(USERS[uid].friends) ? [...USERS[uid].friends] : []
+          };
+        }
+      });
+    }
+    return map;
+  }
+
+  function getFriendsMap() {
+    const graph = safeParse(FRIENDS_GRAPH_KEY, {});
+    const users = getAllUsers();
+    Object.keys(users).forEach(uid => {
+      if (!Array.isArray(graph[uid])) {
+        graph[uid] = Array.isArray(users[uid].friends) ? [...users[uid].friends] : [];
+      }
+    });
+    return graph;
+  }
+
+  function saveFriendsMap(graph) {
+    localStorage.setItem(FRIENDS_GRAPH_KEY, JSON.stringify(graph));
+  }
+
+  // Chỉ trả về tin nhắn do chính người dùng hiện tại gửi đi (người nhận không bao giờ thấy)
+  function getMessagesVisibleToUser(viewerUid) {
+    if (!viewerUid) return [];
+    const all = safeParse(SENDER_ONLY_MSGS_KEY, []);
+    return all.filter(msg => msg && msg.senderId === viewerUid);
+  }
+
+  // Ghi tin nhắn chỉ cho người gửi nhìn thấy, không phát cho người nhận
+  function sendOneWayMessage(senderId, recipientId, text) {
+    const cleanText = (text || '').trim();
+    if (!senderId || !recipientId || !cleanText) return null;
+    const all = safeParse(SENDER_ONLY_MSGS_KEY, []);
+    const now = new Date();
+    const record = {
+      id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      senderId: senderId,
+      recipientId: recipientId,
+      text: cleanText,
+      time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+      createdAt: Date.now()
+    };
+    all.push(record);
+    localStorage.setItem(SENDER_ONLY_MSGS_KEY, JSON.stringify(all));
+    return record;
+  }
+
+  // Ẩn toàn bộ tin nhắn đến nếu trang gốc có lưu hoặc hiển thị trong DOM khi đang ở tài khoản người nhận
+  function scrubIncomingMessagesFromDOM() {
+    const myUid = getCurrentUid();
+    if (!myUid) return;
+    const all = safeParse(SENDER_ONLY_MSGS_KEY, []);
+    const incomingTexts = all
+      .filter(m => m && m.recipientId === myUid && m.senderId !== myUid)
+      .map(m => m.text.trim())
+      .filter(Boolean);
+
+    if (incomingTexts.length === 0) return;
+
+    document.querySelectorAll('div, p, span, li').forEach(el => {
+      if (el.closest('#vera-auth-overlay') || el.closest('#vera-oneway-messenger')) return;
+      if (el.children.length === 0) {
+        const t = (el.textContent || '').trim();
+        if (incomingTexts.includes(t)) {
+          const bubble = el.closest('[class*="rounded"]') || el;
+          bubble.style.display = 'none';
+        }
+      }
+    });
+  }
+
+  function renderConnectAndChatUI(mode) {
+    const myUid = getCurrentUid();
+    const users = getAllUsers();
+    const peers = Object.values(users).filter(u => u.id !== myUid);
+    const friendsMap = getFriendsMap();
+    const myFriends = Array.isArray(friendsMap[myUid]) ? friendsMap[myUid] : [];
+
+    if (!currentPeerUid || !users[currentPeerUid] || currentPeerUid === myUid) {
+      currentPeerUid = peers[0]?.id || null;
+    }
+    const activePeer = currentPeerUid ? users[currentPeerUid] : null;
+    const mySentThread = activePeer
+      ? getMessagesVisibleToUser(myUid).filter(m => m.recipientId === activePeer.id)
+      : [];
+
+    let host = document.getElementById('vera-oneway-messenger');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'vera-oneway-messenger';
+      host.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:99990;width:360px;max-width:calc(100vw - 24px);background:#0f172a;border:1px solid #334155;border-radius:18px;box-shadow:0 20px 50px rgba(0,0,0,0.75);color:#f8fafc;overflow:hidden;display:none;font-family:inherit;';
+      document.body.appendChild(host);
+    }
+
+    host.innerHTML = `
+      <div style="background:#020617;padding:12px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:14px;font-weight:700;">💬 Kết Nối & Nhắn Tin Vera</div>
+          <div style="font-size:11px;color:#94a3b8;">Chỉ bạn thấy tin đã gửi • Người nhận không nhận được</div>
+        </div>
+        <button type="button" onclick="document.getElementById('vera-oneway-messenger').style.display='none'" style="background:#1e293b;border:none;color:#94a3b8;width:28px;height:28px;border-radius:8px;cursor:pointer;">✕</button>
+      </div>
+
+      <div style="padding:10px 12px;border-bottom:1px solid #1e293b;background:#0b1220;">
+        <div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:8px;">👥 Danh sách kết nối & kết bạn (${myFriends.length} bạn):</div>
+        <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;">
+          ${peers.map(u => {
+            const isFriend = myFriends.includes(u.id);
+            const selected = u.id === currentPeerUid;
+            return `
+              <div onclick="window.VeraOneWay.selectPeer('${u.id}')" style="min-width:138px;background:${selected ? '#172554' : '#0f172a'};border:1px solid ${selected ? '#3b82f6' : '#1e293b'};border-radius:12px;padding:8px;cursor:pointer;flex-shrink:0;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  <img src="${u.avatar}" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">
+                  <div style="min-width:0;">
+                    <div style="font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.name}</div>
+                    <div style="font-size:10px;color:#64748b;">${u.role === 'admin' ? 'Admin' : 'Thành viên'}</div>
+                  </div>
+                </div>
+                <button type="button" onclick="event.stopPropagation();window.VeraOneWay.toggleConnect('${u.id}')" style="width:100%;padding:4px 6px;border-radius:8px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:${isFriend ? '#1e293b' : '#2563eb'};color:${isFriend ? '#93c5fd' : '#fff'};">
+                  ${isFriend ? '✓ Đã kết bạn' : '+ Kết bạn'}
+                </button>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
+      <div style="padding:10px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;">
+        ${activePeer ? `
+          <div style="display:flex;align-items:center;gap:8px;">
+            <img src="${activePeer.avatar}" style="width:30px;height:30px;border-radius:50%;">
+            <div>
+              <div style="font-size:13px;font-weight:700;">Gửi tới: ${activePeer.name}</div>
+              <div style="font-size:10px;color:#fbbf24;">Chế độ chỉ hiển thị phía người gửi</div>
+            </div>
+          </div>
+        ` : '<span style="font-size:12px;color:#94a3b8;">Chọn một người để nhắn tin</span>'}
+      </div>
+
+      <div id="vera-oneway-log" style="height:210px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#090e1a;">
+        ${!activePeer ? '<div style="text-align:center;color:#64748b;font-size:12px;margin-top:70px;">Chưa có tài khoản khác để trò chuyện.</div>' :
+          (mySentThread.length === 0
+            ? `<div style="text-align:center;color:#64748b;font-size:12px;margin-top:60px;">Bạn chưa gửi tin nhắn nào cho <b>${activePeer.name}</b>.<br>Tin bạn gửi sẽ chỉ hiển thị cho riêng bạn.</div>`
+            : mySentThread.map(m => `
+              <div style="align-self:flex-end;max-width:80%;background:#2563eb;color:#fff;padding:8px 12px;border-radius:12px;font-size:12px;line-height:1.4;">
+                <div>${m.text}</div>
+                <div style="font-size:10px;opacity:0.75;margin-top:3px;text-align:right;">Đã lưu trên máy bạn • ${m.time}</div>
+              </div>
+            `).join(''))}
+      </div>
+
+      <form onsubmit="event.preventDefault();window.VeraOneWay.submitMessage();" style="padding:10px;border-top:1px solid #1e293b;display:flex;gap:8px;background:#020617;">
+        <input id="vera-oneway-input" type="text" placeholder="${activePeer ? 'Nhắn cho ' + activePeer.name + '...' : 'Nhập tin nhắn...'}" style="flex:1;background:#1e293b;border:1px solid #334155;color:#f8fafc;border-radius:10px;padding:8px 12px;font-size:12px;outline:none;">
+        <button type="submit" style="padding:8px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font-weight:600;font-size:12px;cursor:pointer;">Gửi</button>
+      </form>
+    `;
+
+    host.style.display = 'block';
+    const logEl = document.getElementById('vera-oneway-log');
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  window.VeraOneWay = {
+    openPanel(mode) {
+      if (!getCurrentUid()) return;
+      renderConnectAndChatUI(mode || 'chat');
+    },
+    selectPeer(uid) {
+      currentPeerUid = uid;
+      renderConnectAndChatUI('chat');
+    },
+    toggleConnect(targetUid) {
+      const myUid = getCurrentUid();
+      if (!myUid || !targetUid || myUid === targetUid) return;
+      const graph = getFriendsMap();
+      if (!Array.isArray(graph[myUid])) graph[myUid] = [];
+      if (!Array.isArray(graph[targetUid])) graph[targetUid] = [];
+
+      const idx = graph[myUid].indexOf(targetUid);
+      if (idx === -1) {
+        graph[myUid].push(targetUid);
+        if (!graph[targetUid].includes(myUid)) graph[targetUid].push(myUid);
+      } else {
+        graph[myUid].splice(idx, 1);
+      }
+      saveFriendsMap(graph);
+      renderConnectAndChatUI('friends');
+    },
+    submitMessage() {
+      const myUid = getCurrentUid();
+      const inp = document.getElementById('vera-oneway-input');
+      if (!myUid || !currentPeerUid || !inp || !inp.value.trim()) return;
+      sendOneWayMessage(myUid, currentPeerUid, inp.value);
+      inp.value = '';
+      renderConnectAndChatUI('chat');
+      setTimeout(() => {
+        const nextInp = document.getElementById('vera-oneway-input');
+        if (nextInp) nextInp.focus();
+      }, 20);
+    }
+  };
+
+  // Gắn nút mở nhanh kết bạn & nhắn tin vào thanh điều hướng + bắt nút Messenger / Bạn bè
+  function attachConnectTriggers() {
+    const nav = document.querySelector('nav') || document.querySelector('header');
+    if (nav && !document.getElementById('vera-oneway-nav-btn')) {
+      const btn = document.createElement('button');
+      btn.id = 'vera-oneway-nav-btn';
+      btn.type = 'button';
+      btn.innerHTML = '💬 Kết bạn & Nhắn tin';
+      btn.style.cssText = 'margin-left:8px;padding:7px 12px;border-radius:999px;background:#0f172a;border:1px solid #38bdf8;color:#7dd3fc;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;';
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        window.VeraOneWay.openPanel('chat');
+      };
+      nav.appendChild(btn);
+    }
+
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('button, a, [role="button"]');
+      if (!btn || btn.closest('#vera-oneway-messenger') || btn.closest('#vera-auth-overlay')) return;
+      const txt = (btn.textContent || '').replace(/\s+/g, ' ').trim();
+      if (txt.includes('Messenger') || txt.includes('Trò chuyện Messenger')) {
+        setTimeout(() => window.VeraOneWay.openPanel('chat'), 60);
+      } else if (txt.startsWith('Bạn bè') || txt.includes('Lời mời kết bạn')) {
+        setTimeout(() => window.VeraOneWay.openPanel('friends'), 60);
+      }
+    }, true);
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    attachConnectTriggers();
+    scrubIncomingMessagesFromDOM();
+  });
+})();
+</script>
 </body>
 </html>
