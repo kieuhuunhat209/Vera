@@ -1745,7 +1745,7 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
       });
     });
   </script>
-  <!-- ==================== VERA INDEPENDENT AUTH & 3-COLUMN LAYOUT FIX ==================== -->
+  <!-- ==================== VERA INDEPENDENT AUTH, ROLE SEPARATION & LAYOUT FIX ==================== -->
 <style>
   nav button, header button {
     white-space: nowrap !important;
@@ -1777,7 +1777,6 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     box-sizing: border-box !important;
   }
 
-  /* Ép cả 3 cột nằm đúng làn, cấm trôi đè lên nhau */
   .vera-zone-left,
   .vera-zone-center,
   .vera-zone-right {
@@ -1806,11 +1805,11 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     max-width: 100% !important;
   }
 
-  .vera-panel-hidden {
+  .vera-panel-hidden,
+  .vera-role-hidden {
     display: none !important;
   }
 
-  /* Chỉ gộp 1 cột trên màn hình điện thoại (< 768px) */
   @media (max-width: 768px) {
     .vera-grid-3col,
     .vera-grid-2col {
@@ -1819,13 +1818,13 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     }
   }
 
-  /* Giao diện Modal Tài Khoản Độc Lập Vera */
+  /* Màn hình khóa Đăng nhập / Đăng ký bắt buộc */
   #vera-auth-overlay {
     position: fixed;
     inset: 0;
     z-index: 2147483647;
-    background: rgba(6, 10, 20, 0.88);
-    backdrop-filter: blur(10px);
+    background: rgba(3, 7, 18, 0.96);
+    backdrop-filter: blur(18px);
     display: none;
     align-items: center;
     justify-content: center;
@@ -1837,10 +1836,10 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     border: 1px solid #1e293b;
     border-radius: 20px;
     width: 100%;
-    max-width: 480px;
+    max-width: 460px;
     padding: 28px;
     color: #f8fafc;
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85);
   }
   .vera-input {
     width: 100%;
@@ -1888,55 +1887,57 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
   <div class="vera-auth-card">
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
       <div style="display:flex; align-items:center; gap:10px;">
-        <div style="width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg,#2563eb,#06b6d4); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:20px; color:#fff;">V</div>
+        <div style="width:42px; height:42px; border-radius:12px; background:linear-gradient(135deg,#2563eb,#06b6d4); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:21px; color:#fff;">V</div>
         <div>
-          <h2 style="margin:0; font-size:18px; font-weight:700;">Tài Khoản Độc Lập Vera</h2>
-          <p style="margin:0; font-size:12px; color:#94a3b8;">Mỗi tài khoản có UID, bạn bè & tin nhắn riêng biệt</p>
+          <h2 style="margin:0; font-size:18px; font-weight:700;">Chào mừng đến với Vera</h2>
+          <p style="margin:2px 0 0; font-size:12px; color:#94a3b8;">Đăng nhập hoặc tạo tài khoản cá nhân để tiếp tục</p>
         </div>
       </div>
-      <button type="button" onclick="window.VeraSystem.closeAuthModal()" style="background:#1e293b; border:none; color:#94a3b8; width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:16px;">✕</button>
+      <button id="vera-auth-close-btn" type="button" onclick="window.VeraSystem.closeAuthModal()" style="background:#1e293b; border:none; color:#94a3b8; width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:16px;">✕</button>
     </div>
 
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; background:#020617; padding:5px; border-radius:12px; margin-bottom:18px;">
-      <button type="button" id="vera-tab-login-btn" onclick="window.VeraSystem.switchAuthTab('login')" style="padding:8px; border-radius:9px; border:none; font-weight:600; font-size:13px; cursor:pointer; background:#2563eb; color:#fff;">Đăng nhập / Google</button>
-      <button type="button" id="vera-tab-reg-btn" onclick="window.VeraSystem.switchAuthTab('register')" style="padding:8px; border-radius:9px; border:none; font-weight:600; font-size:13px; cursor:pointer; background:transparent; color:#94a3b8;">Đăng ký thông tin</button>
+    <!-- Chuyển tab Người dùng / Đăng ký / Quản trị viên -->
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; background:#020617; padding:5px; border-radius:12px; margin-bottom:16px;">
+      <button type="button" id="vera-tab-login-btn" onclick="window.VeraSystem.switchAuthTab('login')" style="padding:8px 6px; border-radius:9px; border:none; font-weight:600; font-size:12px; cursor:pointer; background:#2563eb; color:#fff;">Đăng nhập</button>
+      <button type="button" id="vera-tab-reg-btn" onclick="window.VeraSystem.switchAuthTab('register')" style="padding:8px 6px; border-radius:9px; border:none; font-weight:600; font-size:12px; cursor:pointer; background:transparent; color:#94a3b8;">Đăng ký mới</button>
+      <button type="button" id="vera-tab-admin-btn" onclick="window.VeraSystem.switchAuthTab('admin')" style="padding:8px 6px; border-radius:9px; border:none; font-weight:600; font-size:12px; cursor:pointer; background:transparent; color:#fbbf24;">🛡️ Admin</button>
     </div>
 
     <div id="vera-auth-msg" style="display:none; padding:10px 12px; border-radius:10px; font-size:12px; margin-bottom:14px;"></div>
 
-    <!-- FORM 1: ĐĂNG NHẬP & LIÊN KẾT GOOGLE -->
+    <!-- FORM 1: ĐĂNG NHẬP NGƯỜI DÙNG & GOOGLE -->
     <div id="vera-form-login">
       <button type="button" class="vera-btn-google" onclick="window.VeraSystem.openGoogleChooser()">
         <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-        Tiếp tục với Google (Tạo UID Google độc lập)
+        Tiếp tục với Google (Tài khoản Thành viên)
       </button>
 
       <div id="vera-google-box" style="display:none; margin-top:12px; padding:14px; background:#1e293b; border:1px solid #334155; border-radius:14px;">
-        <p style="margin:0 0 8px 0; font-size:12px; font-weight:600; color:#93c5fd;">Liên kết tài khoản Google cá nhân:</p>
-        <input id="vera-gg-email" type="email" class="vera-input" placeholder="Nhập Gmail của bạn (vd: minhanh@gmail.com)" style="margin-bottom:8px;">
-        <input id="vera-gg-name" type="text" class="vera-input" placeholder="Tên hiển thị trên Google (vd: Minh Anh)" style="margin-bottom:10px;">
-        <button type="button" class="vera-btn-primary" onclick="window.VeraSystem.confirmGoogleLogin()">Xác nhận Liên kết & Đăng nhập</button>
+        <p style="margin:0 0 8px 0; font-size:12px; font-weight:600; color:#93c5fd;">Liên kết Gmail cá nhân của bạn:</p>
+        <input id="vera-gg-email" type="email" class="vera-input" placeholder="Nhập Gmail (vd: minhanh@gmail.com)" style="margin-bottom:8px;">
+        <input id="vera-gg-name" type="text" class="vera-input" placeholder="Tên hiển thị (vd: Minh Anh)" style="margin-bottom:10px;">
+        <button type="button" class="vera-btn-primary" onclick="window.VeraSystem.confirmGoogleLogin()">Xác nhận Liên kết & Vào Vera</button>
       </div>
 
-      <div style="display:flex; align-items:center; gap:10px; margin:16px 0; color:#64748b; font-size:12px;">
+      <div style="display:flex; align-items:center; gap:10px; margin:14px 0; color:#64748b; font-size:12px;">
         <div style="flex:1; height:1px; background:#1e293b;"></div>
-        <span>hoặc đăng nhập tài khoản Vera</span>
+        <span>hoặc đăng nhập tài khoản thành viên</span>
         <div style="flex:1; height:1px; background:#1e293b;"></div>
       </div>
 
       <div style="display:flex; flex-direction:column; gap:10px;">
         <input id="vera-login-email" type="text" class="vera-input" placeholder="Email hoặc tên đăng nhập">
         <input id="vera-login-pass" type="password" class="vera-input" placeholder="Mật khẩu">
-        <button type="button" class="vera-btn-primary" onclick="window.VeraSystem.loginWithPassword()">Đăng nhập</button>
+        <button type="button" class="vera-btn-primary" onclick="window.VeraSystem.loginWithPassword()">Đăng nhập Thành viên</button>
       </div>
 
-      <div style="margin-top:18px; border-top:1px solid #1e293b; padding-top:14px;">
-        <p style="margin:0 0 8px 0; font-size:12px; font-weight:600; color:#94a3b8;">Chuyển nhanh tài khoản độc lập trên máy:</p>
-        <div id="vera-saved-accounts-list" style="display:flex; flex-direction:column; gap:8px; max-height:175px; overflow-y:auto;"></div>
+      <div id="vera-saved-accounts-wrap" style="margin-top:16px; border-top:1px solid #1e293b; padding-top:12px; display:none;">
+        <p style="margin:0 0 8px 0; font-size:12px; font-weight:600; color:#94a3b8;">Tài khoản thành viên đã lưu trên máy này:</p>
+        <div id="vera-saved-accounts-list" style="display:flex; flex-direction:column; gap:8px; max-height:150px; overflow-y:auto;"></div>
       </div>
     </div>
 
-    <!-- FORM 2: ĐĂNG KÝ THÔNG TIN CÁ NHÂN CƠ BẢN -->
+    <!-- FORM 2: ĐĂNG KÝ TÀI KHOẢN THÀNH VIÊN MỚI -->
     <div id="vera-form-register" style="display:none;">
       <div style="display:flex; flex-direction:column; gap:10px;">
         <div>
@@ -1967,23 +1968,50 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
         </div>
         <div>
           <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Giới thiệu bản thân</label>
-          <input id="vera-reg-bio" type="text" class="vera-input" placeholder="Sở thích, trường học hoặc lời chào...">
+          <input id="vera-reg-bio" type="text" class="vera-input" placeholder="Trường học, sở thích hoặc lời chào...">
         </div>
-        <button type="button" class="vera-btn-primary" style="margin-top:6px;" onclick="window.VeraSystem.registerNewAccount()">Tạo Tài Khoản Độc Lập Mới</button>
+        <button type="button" class="vera-btn-primary" style="margin-top:6px;" onclick="window.VeraSystem.registerNewAccount()">Tạo Tài Khoản Thành Viên</button>
       </div>
+    </div>
+
+    <!-- FORM 3: CỔNG ĐĂNG NHẬP RIÊNG CHO QUẢN TRỊ VIÊN (ADMIN) -->
+    <div id="vera-form-admin" style="display:none;">
+      <div style="padding:12px; background:rgba(245, 158, 11, 0.12); border:1px solid rgba(245, 158, 11, 0.35); border-radius:12px; margin-bottom:14px; font-size:12px; color:#fde68a;">
+        🛡️ Khu vực dành riêng cho <b>Quản trị viên hệ thống Vera</b> để mở Trung tâm Kiểm duyệt AI & xử lý nội dung vi phạm.
+      </div>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div>
+          <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Tài khoản Quản trị</label>
+          <input id="vera-admin-email" type="text" class="vera-input" value="admin@vera.vn" placeholder="admin@vera.vn">
+        </div>
+        <div>
+          <label style="font-size:12px; color:#94a3b8; display:block; margin-bottom:4px;">Mật khẩu Quản trị viên *</label>
+          <input id="vera-admin-pass" type="password" class="vera-input" placeholder="Nhập mật khẩu Admin">
+        </div>
+        <button type="button" class="vera-btn-primary" style="background:linear-gradient(135deg,#d97706,#b45309);" onclick="window.VeraSystem.loginAsAdmin()">Đăng nhập Quyền Admin</button>
+      </div>
+    </div>
+
+    <!-- Nút Đăng xuất khi đang có phiên đăng nhập -->
+    <div id="vera-logout-footer" style="display:none; margin-top:16px; padding-top:12px; border-top:1px solid #1e293b; text-align:center;">
+      <button type="button" onclick="window.VeraSystem.logoutCurrentUser()" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#fca5a5; padding:8px 16px; border-radius:10px; font-size:12px; font-weight:600; cursor:pointer; width:100%;">
+        🚪 Đăng xuất khỏi tài khoản hiện tại
+      </button>
     </div>
   </div>
 </div>
 
 <script>
 (function () {
-  const STORAGE_ACCOUNTS = 'vera_independent_accounts_v1';
-  const STORAGE_ACTIVE_UID = 'vera_active_uid_v1';
+  const STORAGE_ACCOUNTS = 'vera_independent_accounts_v2';
+  const STORAGE_ACTIVE_UID = 'vera_active_uid_v2';
   const STORAGE_MESSAGES = 'vera_private_messages_v1';
+  const ADMIN_PASSWORD = 'vera@2026'; // Đổi mật khẩu Admin tại đây nếu muốn
+
   let currentActiveTab = 'feed';
   let activeChatPeerId = null;
 
-  // ==================== PHẦN 1: DÒ ĐÚNG 3 CỘT & 4 TAB TRỰC TIẾP ====================
+  // ==================== PHẦN 1: DÒ ĐÚNG 3 CỘT & 4 TAB ====================
   function findSmallestBoxWithText(keyword) {
     const all = Array.from(document.querySelectorAll('div, section, aside, main')).filter(el => {
       if (el.closest('#vera-auth-overlay') || el.closest('nav') || el.closest('header')) return false;
@@ -2028,7 +2056,6 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
 
     if (!centerCol) return null;
 
-    // Lấy trực tiếp panel con của centerCol chứa từng tab
     const findDirectTabPanel = (keywords, idRegex) => {
       const byId = Array.from(centerCol.querySelectorAll('[id]')).find(el => idRegex.test(el.id));
       if (byId) return getDirectChildContaining(centerCol, byId) || byId;
@@ -2063,19 +2090,19 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
 
   function renderFallbackFriends(box) {
     const map = getAccountsMap();
-    const myUid = localStorage.getItem(STORAGE_ACTIVE_UID) || 'admin';
+    const myUid = localStorage.getItem(STORAGE_ACTIVE_UID);
     const me = map[myUid] || { friends: [] };
     if (!Array.isArray(me.friends)) me.friends = [];
-    const others = Object.values(map).filter(u => u.id !== myUid);
+    const others = Object.values(map).filter(u => u.id !== myUid && u.role !== 'admin');
 
     box.innerHTML = `
       <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:20px;color:#f8fafc;">
         <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px;">
           <div>
-            <h3 style="margin:0;font-size:18px;font-weight:700;">👥 Bạn Bè & Kết Nối Cộng Đồng Vera</h3>
-            <p style="margin:4px 0 0;font-size:12px;color:#94a3b8;">Danh sách bạn bè riêng biệt của <b>${me.name || myUid}</b> (${me.friends.length} bạn bè)</p>
+            <h3 style="margin:0;font-size:18px;font-weight:700;">👥 Bạn Bè & Cộng Đồng Thành Viên Vera</h3>
+            <p style="margin:4px 0 0;font-size:12px;color:#94a3b8;">Danh sách bạn bè riêng của <b>${me.name || 'Thành viên'}</b> (${me.friends.length} bạn bè)</p>
           </div>
-          <button type="button" onclick="window.VeraSystem.openAuthModal()" style="padding:8px 12px;border-radius:10px;background:#1e293b;border:1px solid #3b82f6;color:#93c5fd;font-size:12px;font-weight:600;cursor:pointer;">+ Tạo thêm tài khoản</button>
+          <button type="button" onclick="window.VeraSystem.openAuthModal(false)" style="padding:8px 12px;border-radius:10px;background:#1e293b;border:1px solid #3b82f6;color:#93c5fd;font-size:12px;font-weight:600;cursor:pointer;">+ Đổi / Tạo tài khoản</button>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;">
           ${others.map(u => {
@@ -2086,7 +2113,7 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
                   <img src="${u.avatar}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;background:#1e293b;">
                   <div style="min-width:0;">
                     <div style="font-size:14px;font-weight:700;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.name}</div>
-                    <div style="font-size:11px;color:#64748b;">${u.handle} • ${u.provider === 'google' ? 'Google UID' : 'Vera UID'}</div>
+                    <div style="font-size:11px;color:#64748b;">${u.handle} • ${u.provider === 'google' ? 'Google UID' : 'Thành viên'}</div>
                   </div>
                 </div>
                 <p style="margin:0;font-size:12px;color:#94a3b8;min-height:32px;">${u.bio || 'Thành viên Vera'}</p>
@@ -2108,8 +2135,8 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
 
   function renderFallbackMessenger(box) {
     const map = getAccountsMap();
-    const myUid = localStorage.getItem(STORAGE_ACTIVE_UID) || 'admin';
-    const peers = Object.values(map).filter(u => u.id !== myUid);
+    const myUid = localStorage.getItem(STORAGE_ACTIVE_UID);
+    const peers = Object.values(map).filter(u => u.id !== myUid && u.role !== 'admin');
     if (!activeChatPeerId || !map[activeChatPeerId] || activeChatPeerId === myUid) {
       activeChatPeerId = peers[0]?.id || null;
     }
@@ -2139,7 +2166,7 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
               <img src="${peer.avatar}" style="width:36px;height:36px;border-radius:50%;">
               <div>
                 <div style="font-size:14px;font-weight:700;">${peer.name}</div>
-                <div style="font-size:11px;color:#34d399;">● Trò chuyện bảo mật giữa 2 UID độc lập</div>
+                <div style="font-size:11px;color:#34d399;">● Trò chuyện bảo mật giữa 2 tài khoản độc lập</div>
               </div>
             </div>
             <div id="vera-chat-scroll" style="flex:1;padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
@@ -2158,7 +2185,7 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
               <input id="vera-chat-input" type="text" class="vera-input" placeholder="Nhập tin nhắn gửi tới ${peer.name}...">
               <button type="submit" style="padding:10px 18px;border-radius:12px;border:none;background:#2563eb;color:#fff;font-weight:600;cursor:pointer;">Gửi</button>
             </form>
-          ` : '<div style="padding:24px;color:#94a3b8;">Chưa có người dùng khác để nhắn tin.</div>'}
+          ` : '<div style="padding:24px;color:#94a3b8;">Chưa có thành viên khác để nhắn tin.</div>'}
         </div>
       </div>
     `;
@@ -2170,7 +2197,7 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     const blocked = (typeof blockedPosts !== 'undefined' && Array.isArray(blockedPosts)) ? blockedPosts : [];
     box.innerHTML = `
       <div style="background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:20px;color:#f8fafc;">
-        <h3 style="margin:0 0 6px;font-size:18px;font-weight:700;">🛡️ Trung Tâm Kiểm Soát & Hậu Kiểm AI Vera</h3>
+        <h3 style="margin:0 0 6px;font-size:18px;font-weight:700;">🛡️ Trung Tâm Kiểm Soát & Hậu Kiểm AI Vera (Chỉ dành cho Admin)</h3>
         <p style="margin:0 0 16px;font-size:12px;color:#94a3b8;">Tự động chặn video bạo lực, máu me, 18+ bằng cơ chế Fail-Closed trước khi hiển thị công khai.</p>
         ${blocked.length === 0 ? '<div style="padding:24px;background:#020617;border-radius:12px;text-align:center;color:#94a3b8;font-size:13px;">Hiện chưa có bài viết vi phạm nào trong hàng đợi xử lý.</div>' :
           blocked.map((item, idx) => `
@@ -2232,10 +2259,41 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     });
   }
 
+  // ==================== PHẦN 2: PHÂN QUYỀN ADMIN VS NGƯỜI DÙNG THƯỜNG ====================
+  function enforceRoleSeparation(user) {
+    const isAdmin = Boolean(user && user.role === 'admin');
+
+    // Tìm toàn bộ nút / mục menu dành riêng cho Admin
+    const adminKeywords = ['Quản trị AI', 'Nhật ký Kiểm duyệt AI', 'Cài đặt Thuật toán AI'];
+    document.querySelectorAll('button, a, [role="button"], li').forEach(el => {
+      if (el.closest('#vera-auth-overlay')) return;
+      const txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (adminKeywords.some(kw => txt.startsWith(kw) || txt === kw)) {
+        if (isAdmin) {
+          el.classList.remove('vera-role-hidden', 'hidden');
+          el.style.display = '';
+        } else {
+          el.classList.add('vera-role-hidden');
+          el.style.display = 'none';
+        }
+      }
+    });
+
+    // Nếu người dùng thường đang ở tab Admin thì đẩy về Bảng tin
+    if (!isAdmin && currentActiveTab === 'admin') {
+      applyCleanLayout('feed');
+    }
+  }
+
   function hookTabNavigation() {
     if (typeof window.switchTab === 'function' && !window.switchTab._veraWrapped) {
       const origSwitch = window.switchTab;
       window.switchTab = function (tab, ...args) {
+        const activeUser = getCurrentActiveUser();
+        if (tab === 'admin' && (!activeUser || activeUser.role !== 'admin')) {
+          alert('Khu vực này chỉ dành cho Quản trị viên (Admin)!');
+          return;
+        }
         try { origSwitch.apply(this, [tab, ...args]); } catch (e) {}
         applyCleanLayout(tab);
         setTimeout(() => applyCleanLayout(tab), 30);
@@ -2244,12 +2302,11 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     }
 
     document.addEventListener('click', (e) => {
-      // Bắt nút mở Tài khoản / Đổi UID ở mức ưu tiên cao nhất
       const authTrigger = e.target.closest('#vera-nav-account-btn');
-      if (authTrigger || (e.target.textContent || '').includes('Tài khoản / Đổi UID')) {
+      if (authTrigger || (e.target.textContent || '').includes('Đăng xuất')) {
         e.preventDefault();
         e.stopPropagation();
-        window.VeraSystem.openAuthModal();
+        window.VeraSystem.openAuthModal(false);
         return;
       }
 
@@ -2265,18 +2322,46 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
       } else if (onclickAttr.includes("'messenger'") || txt.includes('Messenger')) {
         setTimeout(() => applyCleanLayout('messenger'), 15);
       } else if (onclickAttr.includes("'admin'") || txt.includes('Quản trị AI') || txt.includes('Kiểm duyệt AI')) {
+        const activeUser = getCurrentActiveUser();
+        if (!activeUser || activeUser.role !== 'admin') {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         setTimeout(() => applyCleanLayout('admin'), 15);
       }
     }, true);
   }
 
-  // ==================== PHẦN 2: HỆ THỐNG TÀI KHOẢN ĐỘC LẬP & GOOGLE ====================
+  // ==================== PHẦN 3: HỆ THỐNG TÀI KHOẢN ĐỘC LẬP & GOOGLE ====================
   function getAccountsMap() {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(STORAGE_ACCOUNTS) || '{}'); } catch (e) { saved = {}; }
 
+    // Luôn đảm bảo có sẵn 1 tài khoản Admin tách biệt
+    if (!saved['admin']) {
+      saved['admin'] = {
+        id: 'admin',
+        uid: 'admin',
+        name: 'Admin VERA',
+        handle: '@admin_VERA',
+        email: 'admin@vera.vn',
+        avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=VeraAdmin',
+        bio: 'Quản trị viên Hệ thống Kiểm duyệt AI Vera',
+        provider: 'system',
+        role: 'admin',
+        friends: [],
+        password: ADMIN_PASSWORD
+      };
+    }
+
+    // Nạp các tài khoản thành viên mẫu (user_a, user_b...) nhưng KHÔNG đặt làm mặc định đăng nhập
     if (typeof USERS !== 'undefined' && USERS) {
       Object.keys(USERS).forEach(uid => {
+        if (uid === 'admin') {
+          USERS['admin'] = { ...USERS['admin'], ...saved['admin'] };
+          return;
+        }
         if (!saved[uid]) {
           saved[uid] = {
             id: uid, uid: uid,
@@ -2285,8 +2370,8 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
             email: USERS[uid].email || `${uid}@vera.vn`,
             avatar: USERS[uid].avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${uid}`,
             bio: USERS[uid].bio || 'Thành viên cộng đồng Vera',
-            provider: uid === 'admin' ? 'system' : 'local',
-            role: uid === 'admin' ? 'admin' : 'user',
+            provider: 'local',
+            role: 'user',
             friends: Array.isArray(USERS[uid].friends) ? [...USERS[uid].friends] : [],
             password: ''
           };
@@ -2310,6 +2395,13 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     }
   }
 
+  function getCurrentActiveUser() {
+    const uid = localStorage.getItem(STORAGE_ACTIVE_UID);
+    if (!uid) return null;
+    const map = getAccountsMap();
+    return map[uid] || null;
+  }
+
   function applyActiveUserToUI(user) {
     if (!user) return;
     localStorage.setItem(STORAGE_ACTIVE_UID, user.id);
@@ -2327,7 +2419,12 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
       leftHandle.textContent = user.handle;
       const nameEl = leftHandle.previousElementSibling;
       if (nameEl) {
-        nameEl.innerHTML = `${user.name} ${user.provider === 'google' ? '<span style="font-size:10px;background:#1d4ed8;color:#fff;padding:1px 6px;border-radius:99px;margin-left:4px;">Google</span>' : ''}`;
+        const badge = user.role === 'admin'
+          ? '<span style="font-size:10px;background:#d97706;color:#fff;padding:1px 6px;border-radius:99px;margin-left:4px;">Admin</span>'
+          : (user.provider === 'google'
+            ? '<span style="font-size:10px;background:#1d4ed8;color:#fff;padding:1px 6px;border-radius:99px;margin-left:4px;">Google</span>'
+            : '<span style="font-size:10px;background:#0f766e;color:#fff;padding:1px 6px;border-radius:99px;margin-left:4px;">Thành viên</span>');
+        nameEl.innerHTML = `${user.name} ${badge}`;
       }
       const card = leftHandle.closest('div')?.parentElement;
       const avatarImg = card?.querySelector('img');
@@ -2338,31 +2435,47 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     if (navImgs.length > 0 && user.avatar) {
       navImgs[navImgs.length - 1].src = user.avatar;
     }
+
+    const navBtn = document.getElementById('vera-nav-account-btn');
+    if (navBtn) {
+      navBtn.innerHTML = user.role === 'admin'
+        ? `🛡️ ${user.name} • Đăng xuất`
+        : `👤 ${user.name} • Đăng xuất`;
+    }
+
+    enforceRoleSeparation(user);
     setTimeout(() => applyCleanLayout(currentActiveTab), 30);
   }
 
   function renderSavedAccountsList() {
+    const wrap = document.getElementById('vera-saved-accounts-wrap');
     const listEl = document.getElementById('vera-saved-accounts-list');
-    if (!listEl) return;
+    if (!listEl || !wrap) return;
     const map = getAccountsMap();
-    const activeUid = localStorage.getItem(STORAGE_ACTIVE_UID) || 'admin';
-    listEl.innerHTML = Object.values(map).map(u => {
+    const activeUid = localStorage.getItem(STORAGE_ACTIVE_UID);
+    // Chỉ hiển thị các tài khoản thành viên (không hiện tài khoản Admin ở danh sách chọn nhanh)
+    const memberUsers = Object.values(map).filter(u => u.role !== 'admin');
+
+    if (memberUsers.length === 0) {
+      wrap.style.display = 'none';
+      return;
+    }
+    wrap.style.display = 'block';
+    listEl.innerHTML = memberUsers.map(u => {
       const isCurrent = u.id === activeUid;
       const badge = u.provider === 'google'
         ? '<span style="font-size:10px;background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:6px;font-weight:700;">Google</span>'
-        : (u.role === 'admin'
-          ? '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:6px;font-weight:700;">Admin</span>'
-          : '<span style="font-size:10px;background:#1e293b;color:#94a3b8;padding:2px 6px;border-radius:6px;">UID Riêng</span>');
+        : '<span style="font-size:10px;background:#1e293b;color:#94a3b8;padding:2px 6px;border-radius:6px;">Thành viên</span>';
       return `
         <div onclick="window.VeraSystem.quickSwitchAccount('${u.id}')" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:10px;background:${isCurrent ? '#172554' : '#020617'};border:1px solid ${isCurrent ? '#3b82f6' : '#1e293b'};cursor:pointer;">
           <div style="display:flex;align-items:center;gap:10px;">
             <img src="${u.avatar}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;background:#1e293b;">
             <div>
               <div style="font-size:13px;font-weight:600;color:#f8fafc;">${u.name} ${badge}</div>
-              <div style="font-size:11px;color:#64748b;">${u.email || u.handle} • UID: ${u.id.slice(0, 10)}</div>
+              <div style="font-size:11px;color:#64748b;">${u.email || u.handle}</div>
             </div>
           </div>
-          <span style="font-size:11px;font-weight:600;color:${isCurrent ? '#60a5fa' : '#94a3b8'};">${isCurrent ? 'Đang dùng' : 'Chọn →'}</span>
+          <span style="font-size:11px;font-weight:600;color:${isCurrent ? '#60a5fa' : '#94a3b8'};">${isCurrent ? 'Đang dùng' : 'Vào acc →'}</span>
         </div>
       `;
     }).join('');
@@ -2386,12 +2499,12 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     const btn = document.createElement('button');
     btn.id = 'vera-nav-account-btn';
     btn.type = 'button';
-    btn.innerHTML = '👤 Tài khoản / Đổi UID';
+    btn.innerHTML = '👤 Đăng nhập / Đăng xuất';
     btn.style.cssText = 'position:relative;z-index:9999;pointer-events:auto;margin-left:10px;padding:7px 13px;border-radius:999px;background:#1e293b;border:1px solid #3b82f6;color:#93c5fd;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;';
     btn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      window.VeraSystem.openAuthModal();
+      window.VeraSystem.openAuthModal(false);
     };
     nav.appendChild(btn);
   }
@@ -2411,26 +2524,43 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
   }
 
   window.VeraSystem = {
-    openAuthModal() {
+    openAuthModal(mandatory = false) {
       const overlay = document.getElementById('vera-auth-overlay');
       if (!overlay) return;
       renderSavedAccountsList();
       const msg = document.getElementById('vera-auth-msg');
       if (msg) msg.style.display = 'none';
+
+      const activeUser = getCurrentActiveUser();
+      const isLocked = mandatory || !activeUser;
+      const closeBtn = document.getElementById('vera-auth-close-btn');
+      const logoutFooter = document.getElementById('vera-logout-footer');
+
+      if (closeBtn) closeBtn.style.display = isLocked ? 'none' : 'block';
+      if (logoutFooter) logoutFooter.style.display = activeUser ? 'block' : 'none';
+
       overlay.style.display = 'flex';
     },
     closeAuthModal() {
+      // Không cho tắt bảng nếu chưa đăng nhập bất kỳ tài khoản nào
+      if (!getCurrentActiveUser()) return;
       const overlay = document.getElementById('vera-auth-overlay');
       if (overlay) overlay.style.display = 'none';
     },
     switchAuthTab(tab) {
-      const isLogin = tab === 'login';
-      document.getElementById('vera-form-login').style.display = isLogin ? 'block' : 'none';
-      document.getElementById('vera-form-register').style.display = isLogin ? 'none' : 'block';
-      document.getElementById('vera-tab-login-btn').style.background = isLogin ? '#2563eb' : 'transparent';
-      document.getElementById('vera-tab-login-btn').style.color = isLogin ? '#fff' : '#94a3b8';
-      document.getElementById('vera-tab-reg-btn').style.background = !isLogin ? '#2563eb' : 'transparent';
-      document.getElementById('vera-tab-reg-btn').style.color = !isLogin ? '#fff' : '#94a3b8';
+      document.getElementById('vera-form-login').style.display = tab === 'login' ? 'block' : 'none';
+      document.getElementById('vera-form-register').style.display = tab === 'register' ? 'block' : 'none';
+      document.getElementById('vera-form-admin').style.display = tab === 'admin' ? 'block' : 'none';
+
+      document.getElementById('vera-tab-login-btn').style.background = tab === 'login' ? '#2563eb' : 'transparent';
+      document.getElementById('vera-tab-login-btn').style.color = tab === 'login' ? '#fff' : '#94a3b8';
+
+      document.getElementById('vera-tab-reg-btn').style.background = tab === 'register' ? '#2563eb' : 'transparent';
+      document.getElementById('vera-tab-reg-btn').style.color = tab === 'register' ? '#fff' : '#94a3b8';
+
+      document.getElementById('vera-tab-admin-btn').style.background = tab === 'admin' ? '#d97706' : 'transparent';
+      document.getElementById('vera-tab-admin-btn').style.color = tab === 'admin' ? '#fff' : '#fbbf24';
+
       document.getElementById('vera-auth-msg').style.display = 'none';
     },
     openGoogleChooser() {
@@ -2441,8 +2571,10 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
       const email = document.getElementById('vera-gg-email').value.trim().toLowerCase();
       const rawName = document.getElementById('vera-gg-name').value.trim();
       if (!email || !email.includes('@')) return showAuthMsg('Vui lòng nhập địa chỉ Gmail hợp lệ để liên kết!', true);
+      if (email === 'admin@vera.vn') return showAuthMsg('Email này thuộc hệ thống Quản trị viên, vui lòng đăng nhập ở tab Admin!', true);
+
       const map = getAccountsMap();
-      let existing = Object.values(map).find(u => u.email === email);
+      let existing = Object.values(map).find(u => u.email === email && u.role !== 'admin');
       if (!existing) {
         const uid = 'gg_' + btoa(email).replace(/[^a-zA-Z0-9]/g, '').slice(0, 12);
         const displayName = rawName || email.split('@')[0];
@@ -2451,16 +2583,15 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
           handle: '@' + email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, ''),
           email: email,
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(email)}`,
-          bio: 'Tài khoản liên kết Google trên Vera',
+          bio: 'Thành viên liên kết Google trên Vera',
           provider: 'google', role: 'user', friends: [], password: ''
         };
         map[uid] = existing;
         saveAccountsMap(map);
       }
       applyActiveUserToUI(existing);
-      renderSavedAccountsList();
-      showAuthMsg(`Đã liên kết Google & đăng nhập: ${existing.name}`, false);
-      setTimeout(() => this.closeAuthModal(), 600);
+      showAuthMsg(`Đăng nhập thành công: ${existing.name}`, false);
+      setTimeout(() => this.closeAuthModal(), 450);
     },
     registerNewAccount() {
       const name = document.getElementById('vera-reg-name').value.trim();
@@ -2488,32 +2619,56 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
       map[uid] = newUser;
       saveAccountsMap(map);
       applyActiveUserToUI(newUser);
-      renderSavedAccountsList();
-      showAuthMsg(`Tạo tài khoản độc lập thành công: ${name}`, false);
-      setTimeout(() => this.closeAuthModal(), 600);
+      showAuthMsg(`Tạo tài khoản thành viên thành công: ${name}`, false);
+      setTimeout(() => this.closeAuthModal(), 450);
     },
     loginWithPassword() {
       const email = document.getElementById('vera-login-email').value.trim().toLowerCase();
       const pass = document.getElementById('vera-login-pass').value;
       const map = getAccountsMap();
       const user = Object.values(map).find(u => u.email === email || u.handle.toLowerCase() === '@' + email);
-      if (!user) return showAuthMsg('Không tìm thấy tài khoản này. Bạn có thể chuyển sang tab Đăng ký!', true);
+      if (!user) return showAuthMsg('Không tìm thấy tài khoản này. Bạn hãy chuyển sang tab Đăng ký mới!', true);
+      if (user.role === 'admin') return showAuthMsg('Đây là tài khoản Quản trị viên. Vui lòng chuyển sang tab 🛡️ Admin để đăng nhập!', true);
       if (user.password && user.password !== pass) return showAuthMsg('Mật khẩu không chính xác!', true);
+
       applyActiveUserToUI(user);
-      renderSavedAccountsList();
       showAuthMsg(`Đăng nhập thành công: ${user.name}`, false);
-      setTimeout(() => this.closeAuthModal(), 500);
+      setTimeout(() => this.closeAuthModal(), 400);
+    },
+    loginAsAdmin() {
+      const email = document.getElementById('vera-admin-email').value.trim().toLowerCase();
+      const pass = document.getElementById('vera-admin-pass').value;
+      const map = getAccountsMap();
+      const adminAcc = map['admin'];
+
+      if (email !== 'admin' && email !== 'admin@vera.vn') {
+        return showAuthMsg('Sai tên tài khoản Quản trị viên!', true);
+      }
+      if (pass !== adminAcc.password) {
+        return showAuthMsg('Sai mật khẩu Quản trị viên!', true);
+      }
+
+      applyActiveUserToUI(adminAcc);
+      showAuthMsg('Đã xác thực quyền Quản trị viên (Admin VERA)!', false);
+      setTimeout(() => this.closeAuthModal(), 450);
     },
     quickSwitchAccount(uid) {
       const map = getAccountsMap();
-      if (!map[uid]) return;
+      if (!map[uid] || map[uid].role === 'admin') return;
       applyActiveUserToUI(map[uid]);
-      renderSavedAccountsList();
       this.closeAuthModal();
+    },
+    logoutCurrentUser() {
+      localStorage.removeItem(STORAGE_ACTIVE_UID);
+      enforceRoleSeparation({ role: 'guest' });
+      const navBtn = document.getElementById('vera-nav-account-btn');
+      if (navBtn) navBtn.innerHTML = '👤 Đăng nhập / Đăng ký';
+      this.switchAuthTab('login');
+      this.openAuthModal(true);
     },
     toggleFriend(targetUid) {
       const map = getAccountsMap();
-      const myUid = localStorage.getItem(STORAGE_ACTIVE_UID) || 'admin';
+      const myUid = localStorage.getItem(STORAGE_ACTIVE_UID);
       if (!map[myUid] || !map[targetUid]) return;
       if (!Array.isArray(map[myUid].friends)) map[myUid].friends = [];
       if (!Array.isArray(map[targetUid].friends)) map[targetUid].friends = [];
@@ -2536,7 +2691,7 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
       const inp = document.getElementById('vera-chat-input');
       if (!inp || !inp.value.trim() || !activeChatPeerId) return;
       const text = inp.value.trim();
-      const myUid = localStorage.getItem(STORAGE_ACTIVE_UID) || 'admin';
+      const myUid = localStorage.getItem(STORAGE_ACTIVE_UID);
       const allMsgs = JSON.parse(localStorage.getItem(STORAGE_MESSAGES) || '[]');
       const now = new Date();
       const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -2552,10 +2707,13 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     hookTabNavigation();
     applyCleanLayout('feed');
 
-    const map = getAccountsMap();
-    const savedUid = localStorage.getItem(STORAGE_ACTIVE_UID);
-    if (savedUid && map[savedUid]) {
-      applyActiveUserToUI(map[savedUid]);
+    const activeUser = getCurrentActiveUser();
+    if (activeUser) {
+      applyActiveUserToUI(activeUser);
+    } else {
+      // Chưa đăng nhập: ẩn quyền Admin và bật bắt buộc cổng Đăng nhập / Đăng ký
+      enforceRoleSeparation({ role: 'guest' });
+      window.VeraSystem.openAuthModal(true);
     }
   }
 
