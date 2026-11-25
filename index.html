@@ -3650,11 +3650,12 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
 })();
 </script>
 <!-- ==================== VERA AI MODERATION TURBO v2 (STORYBOARD 3x3 + 2-TIER GEMINI 3.5/3.8) ==================== -->
+<!-- ==================== VERA AI MODERATION TURBO v3 (AUTO-NORMALIZE + TOAST + GUARANTEED PUBLISH/BLOCK) ==================== -->
 <script>
 (function () {
   const SHARED_API_KEY = 'vera_shared_gemini_key_v1';
+  const ADMIN_QUEUE_KEY = 'vera_admin_evidence_queue_v1';
 
-  // Tầng 1: Quét siêu tốc (2–4s) | Tầng 2: Thẩm định sâu các ca nghi vấn & dự phòng
   const TIER1_FAST_MODELS = [
     { id: 'gemini-3.5-flash-lite', thinkingLevel: 'minimal' },
     { id: 'gemini-3.1-flash-lite', thinkingLevel: 'minimal' }
@@ -3664,8 +3665,84 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     { id: 'gemini-3.6-flash', thinkingLevel: 'low' }
   ];
 
-  // Hàm fetch có giới hạn thời gian chờ (mặc định 12 giây để không bao giờ bị treo)
-  async function fetchWithTimeout(url, options, timeoutMs = 12000) {
+  // Lưu tạm tệp video người dùng vừa chọn để phát trực tiếp (không làm tràn localStorage)
+  let lastPickedVideo = { file: null, blobUrl: '', thumb: '' };
+
+  function captureThumbFromFile(file) {
+    return new Promise((resolve) => {
+      try {
+        const url = URL.createObjectURL(file);
+        const v = document.createElement('video');
+        v.src = url;
+        v.muted = true;
+        v.playsInline = true;
+        const done = (img) => { URL.revokeObjectURL(url); resolve(img || ''); };
+        const t = setTimeout(() => done(''), 3000);
+        v.onerror = () => { clearTimeout(t); done(''); };
+        v.onloadeddata = () => {
+          v.currentTime = Math.min(1, (v.duration || 1) / 2);
+        };
+        v.onseeked = () => {
+          clearTimeout(t);
+          try {
+            const c = document.createElement('canvas');
+            c.width = 320;
+            c.height = 180;
+            c.getContext('2d').drawImage(v, 0, 0, 320, 180);
+            done(c.toDataURL('image/jpeg', 0.6));
+          } catch (_) { done(''); }
+        };
+      } catch (_) { resolve(''); }
+    });
+  }
+
+  document.addEventListener('change', async (e) => {
+    const inp = e.target;
+    if (inp && inp.type === 'file' && inp.files && inp.files[0]) {
+      const f = inp.files[0];
+      if (f.type && f.type.startsWith('video/')) {
+        lastPickedVideo.file = f;
+        lastPickedVideo.blobUrl = URL.createObjectURL(f);
+        lastPickedVideo.thumb = await captureThumbFromFile(f);
+      }
+    }
+  }, true);
+
+  // Hiển thị thanh thông báo kiểm duyệt trực tiếp góc trên bên phải màn hình
+  function showModerationToast(status, title, detail) {
+    let box = document.getElementById('vera-mod-toast');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'vera-mod-toast';
+      box.style.cssText = 'position:fixed;top:74px;right:20px;z-index:2147483646;width:360px;max-width:calc(100vw - 24px);border-radius:14px;padding:14px 16px;color:#f8fafc;box-shadow:0 18px 45px rgba(0,0,0,0.75);font-size:13px;line-height:1.45;transition:all 0.2s;';
+      document.body.appendChild(box);
+    }
+    const palette = {
+      loading: { bg: '#0f172a', border: '#3b82f6', accent: '#60a5fa' },
+      safe:    { bg: '#052e16', border: '#10b981', accent: '#34d399' },
+      blocked: { bg: '#450a0a', border: '#ef4444', accent: '#fca5a5' },
+      error:   { bg: '#451a03', border: '#f59e0b', accent: '#fcd34d' }
+    }[status] || { bg: '#0f172a', border: '#334155', accent: '#94a3b8' };
+
+    box.style.background = palette.bg;
+    box.style.border = `1px solid ${palette.border}`;
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div>
+          <div style="font-weight:700;color:${palette.accent};margin-bottom:4px;">${title}</div>
+          <div style="font-size:12px;color:#e2e8f0;">${detail}</div>
+        </div>
+        <button type="button" onclick="this.closest('#vera-mod-toast').style.display='none'" style="background:rgba(255,255,255,0.1);border:none;color:#fff;width:24px;height:24px;border-radius:6px;cursor:pointer;flex-shrink:0;">✕</button>
+      </div>
+    `;
+    clearTimeout(box._hideTimer);
+    if (status !== 'loading') {
+      box._hideTimer = setTimeout(() => { box.style.display = 'none'; }, 9000);
+    }
+  }
+
+  async function fetchWithTimeout(url, options, timeoutMs = 14000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -3675,14 +3752,11 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     }
   }
 
-  // Format mốc giây mm:ss để in lên góc từng khung hình
   function fmtSec(sec) {
     const s = Math.max(0, Math.floor(sec || 0));
-    const m = Math.floor(s / 60);
-    return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   }
 
-  // Cắt 9 khung hình trải đều từ video Base64 -> Ghép thành 1 ảnh Storyboard 3x3 siêu nhẹ (~150KB)
   async function buildStoryboardFromVideoBase64(base64Data, mimeType) {
     return new Promise((resolve) => {
       try {
@@ -3698,8 +3772,7 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
         video.playsInline = true;
         video.preload = 'auto';
 
-        const cols = 3, rows = 3, total = 9;
-        const cellW = 384, cellH = 216;
+        const cols = 3, rows = 3, total = 9, cellW = 384, cellH = 216;
         const canvas = document.createElement('canvas');
         canvas.width = cols * cellW;
         canvas.height = rows * cellH;
@@ -3707,68 +3780,49 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        let done = false;
-        let captured = 0;
+        let done = false, captured = 0;
         const finish = () => {
           if (done) return;
           done = true;
           clearTimeout(hardTimer);
           URL.revokeObjectURL(url);
-          if (captured === 0) return resolve(null);
-          resolve(canvas.toDataURL('image/jpeg', 0.72).split(',')[1]);
+          resolve(captured > 0 ? canvas.toDataURL('image/jpeg', 0.72).split(',')[1] : null);
         };
         const hardTimer = setTimeout(finish, 6000);
-
         video.onerror = finish;
         video.onloadedmetadata = () => {
           const duration = isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
           let idx = 0;
-
           const drawCell = () => {
-            const c = idx % cols;
-            const r = Math.floor(idx / cols);
-            const x = c * cellW;
-            const y = r * cellH;
+            const x = (idx % cols) * cellW;
+            const y = Math.floor(idx / cols) * cellH;
             try {
               ctx.drawImage(video, x, y, cellW, cellH);
-              // In nhãn số thứ tự & mốc giây lên góc trái mỗi ô
-              const stamp = `#${idx + 1} (${fmtSec(((idx + 0.5) / total) * duration)})`;
               ctx.fillStyle = 'rgba(0,0,0,0.72)';
               ctx.fillRect(x + 6, y + 6, 94, 22);
               ctx.fillStyle = '#38bdf8';
               ctx.font = 'bold 13px sans-serif';
-              ctx.fillText(stamp, x + 12, y + 21);
+              ctx.fillText(`#${idx + 1} (${fmtSec(((idx + 0.5) / total) * duration)})`, x + 12, y + 21);
               captured++;
             } catch (_) {}
-
             idx++;
-            if (idx < total) {
-              video.currentTime = Math.min(duration - 0.05, ((idx + 0.5) / total) * duration);
-            } else {
-              finish();
-            }
+            if (idx < total) video.currentTime = Math.min(duration - 0.05, ((idx + 0.5) / total) * duration);
+            else finish();
           };
-
           video.onseeked = drawCell;
           video.currentTime = Math.min(duration - 0.05, (0.5 / total) * duration);
         };
-      } catch (_) {
-        resolve(null);
-      }
+      } catch (_) { resolve(null); }
     });
   }
 
-  // Nếu code cũ đã tách sẵn chuỗi nhiều ảnh (vd 12 khung hình) -> Gộp gọn vào 1 lưới 3x3 siêu nhẹ
   async function stitchImagePartsToStoryboard(imageParts) {
     const selected = [];
     const targetCount = Math.min(9, imageParts.length);
     for (let i = 0; i < targetCount; i++) {
-      const pickIdx = Math.floor((i * imageParts.length) / targetCount);
-      selected.push(imageParts[pickIdx]);
+      selected.push(imageParts[Math.floor((i * imageParts.length) / targetCount)]);
     }
-
-    const cols = 3, rows = Math.ceil(selected.length / 3);
-    const cellW = 384, cellH = 216;
+    const cols = 3, rows = Math.ceil(selected.length / 3), cellW = 384, cellH = 216;
     const canvas = document.createElement('canvas');
     canvas.width = cols * cellW;
     canvas.height = rows * cellH;
@@ -3792,11 +3846,9 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
       img.onerror = res;
       img.src = `data:${part.inlineData.mimeType || 'image/jpeg'};base64,${part.inlineData.data}`;
     })));
-
     return canvas.toDataURL('image/jpeg', 0.72).split(',')[1];
   }
 
-  // Tối ưu payload: tự động nén video thô hoặc chuỗi >= 3 ảnh thành 1 ảnh Storyboard 3x3
   async function optimizePayloadForSpeed(payload) {
     const origParts = payload?.contents?.[0]?.parts;
     if (!Array.isArray(origParts) || origParts.length === 0) return payload;
@@ -3811,25 +3863,155 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
     } else if (imageParts.length >= 3) {
       storyboardBase64 = await stitchImagePartsToStoryboard(imageParts);
     }
-
     if (!storyboardBase64) return payload;
 
     const gridHint = {
       text:
-        '[HƯỚNG DẪN PHÂN TÍCH LƯỚI KHUNG HÌNH]: Ảnh đính kèm là bảng Storyboard 3x3 gồm các khung hình cắt đều theo thứ tự thời gian từ trái sang phải, trên xuống dưới (#1 -> #9). ' +
-        'Hãy phân tích diễn biến liên tiếp giữa các khung hình để phát hiện chính xác bạo lực học đường (đấm, đá, túm tóc, hội đồng), máu me, hung khí hoặc nội dung 18+; phân biệt rõ với thể thao hay vui chơi bình thường.'
+        '[LƯỚI KHUNG HÌNH STORYBOARD 3x3]: Phân tích diễn biến từ #1 đến #9 theo thời gian. ' +
+        'BẮT BUỘC trả về JSON 1 đối tượng duy nhất gồm đủ các khóa: ' +
+        '{"isSafe": boolean, "riskScore": number (0-100), "hasPhysicalViolence": boolean, "hasBloodOrGore": boolean, "hasWeapons": boolean, "hasNSFW": boolean, "videoDescription": string, "reason": string, "categories": string[]}.'
     };
 
-    const nextPayload = Object.assign({}, payload, {
+    return Object.assign({}, payload, {
       contents: [{
         role: payload.contents[0].role || 'user',
         parts: [...textParts, gridHint, { inlineData: { mimeType: 'image/jpeg', data: storyboardBase64 } }]
       }]
     });
-    return nextPayload;
   }
 
-  // Gọi 1 model cụ thể với thinkingLevel tối ưu
+  // Chuẩn hóa phản hồi Gemini 3.x (loại bỏ part thought:true và đảm bảo JSON hợp lệ 100%)
+  function extractAndNormalizeVerdict(data) {
+    const candidate = data?.candidates?.[0];
+    const finishReason = candidate?.finishReason;
+    const blockReason = data?.promptFeedback?.blockReason;
+
+    if (blockReason || ['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST'].includes(finishReason)) {
+      return {
+        isSafe: false,
+        riskScore: 98,
+        hasPhysicalViolence: true,
+        hasBloodOrGore: false,
+        hasWeapons: false,
+        hasNSFW: false,
+        videoDescription: 'Bộ lọc an toàn của Google đã phát hiện nội dung nguy hiểm hoặc bạo lực.',
+        reason: `Google Safety Triggered (${blockReason || finishReason})`,
+        categories: ['Bạo lực / Vi phạm bị chặn bởi Google']
+      };
+    }
+
+    const parts = candidate?.content?.parts || [];
+    const answerPart = parts.find(p => !p.thought && typeof p.text === 'string' && p.text.trim()) ||
+                       parts.find(p => typeof p.text === 'string' && p.text.trim());
+    const rawText = (answerPart?.text || '').replace(/```json/gi, '').replace(/```/g, '').trim();
+
+    let parsed = null;
+    try {
+      const start = rawText.indexOf('{');
+      const end = rawText.lastIndexOf('}');
+      parsed = JSON.parse(start !== -1 && end > start ? rawText.slice(start, end + 1) : rawText);
+      if (Array.isArray(parsed)) parsed = parsed[0];
+    } catch (_) {
+      parsed = null;
+    }
+
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    const hasViolence = Boolean(parsed.hasPhysicalViolence || parsed.violence);
+    const hasBlood = Boolean(parsed.hasBloodOrGore || parsed.blood);
+    const hasWeapons = Boolean(parsed.hasWeapons || parsed.weapons);
+    const hasNSFW = Boolean(parsed.hasNSFW || parsed.nsfw);
+    const score = Number.isFinite(Number(parsed.riskScore))
+      ? Math.max(0, Math.min(100, Number(parsed.riskScore)))
+      : (hasViolence || hasBlood || hasWeapons || hasNSFW ? 90 : 5);
+
+    const isSafe = typeof parsed.isSafe === 'boolean'
+      ? parsed.isSafe
+      : (score < 50 && !hasViolence && !hasBlood && !hasWeapons && !hasNSFW);
+
+    return {
+      isSafe,
+      riskScore: score,
+      hasPhysicalViolence: hasViolence,
+      hasBloodOrGore: hasBlood,
+      hasWeapons,
+      hasNSFW,
+      videoDescription: String(parsed.videoDescription || parsed.description || 'Đã phân tích nội dung video.'),
+      reason: String(parsed.reason || (isSafe ? 'Nội dung lành mạnh, an toàn.' : 'Phát hiện yếu tố bạo lực hoặc vi phạm tiêu chuẩn cộng đồng.')),
+      categories: Array.isArray(parsed.categories) ? parsed.categories : (isSafe ? ['An toàn'] : ['Vi phạm'])
+    };
+  }
+
+  function injectNormalizedJsonIntoData(data, verdict) {
+    if (!data || !verdict) return;
+    if (!Array.isArray(data.candidates) || !data.candidates[0]) {
+      data.candidates = [{ content: { parts: [] } }];
+    }
+    data.candidates[0].content = {
+      role: 'model',
+      parts: [{ text: JSON.stringify(verdict) }]
+    };
+  }
+
+  // Đẩy vào Hàng đợi Admin nếu video bị chặn
+  function pushBlockedToAdminQueue(verdict) {
+    try {
+      const raw = localStorage.getItem(ADMIN_QUEUE_KEY);
+      const q = raw ? JSON.parse(raw) : [];
+      const ta = document.querySelector('textarea');
+      const author = document.getElementById('vera-nav-auth-btn')?.textContent?.replace(/[🛡️👤•].*$/g, '').trim() || 'Thành viên VERA';
+      q.unshift({
+        id: 'ev_' + Date.now(),
+        authorName: author,
+        caption: ta ? ta.value.trim() : '(Video không có chú thích)',
+        reason: verdict.reason,
+        riskScore: verdict.riskScore,
+        thumb: lastPickedVideo.thumb || '',
+        status: 'pending',
+        time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+      });
+      localStorage.setItem(ADMIN_QUEUE_KEY, JSON.stringify(q.slice(0, 20)));
+
+      // Cập nhật số đếm trên nút Quản trị AI
+      const pending = q.filter(i => i.status === 'pending').length;
+      document.querySelectorAll('button, a').forEach(btn => {
+        if ((btn.textContent || '').includes('Quản trị AI')) {
+          const badge = btn.querySelector('span');
+          if (badge && /^\d+$/.test(badge.textContent.trim())) badge.textContent = String(pending);
+        }
+      });
+    } catch (_) {}
+  }
+
+  // Dự phòng: Nếu code gốc không tự vẽ bài video vừa duyệt An toàn lên Bảng tin -> tự vẽ ngay
+  function ensureVideoPostedToFeedIfMissing(prevFeedVideoCount, verdict, modelName, sec) {
+    setTimeout(() => {
+      const ta = document.querySelector('textarea');
+      const composer = ta ? (ta.closest('div[class*="rounded"]') || ta.parentElement) : null;
+      const allVideos = Array.from(document.querySelectorAll('video')).filter(v => !composer || !composer.contains(v));
+      if (allVideos.length > prevFeedVideoCount) return; // Code gốc đã đăng bài thành công
+
+      if (!composer || !composer.parentElement) return;
+      const authorName = document.getElementById('vera-nav-auth-btn')?.textContent?.replace(/•.*$/g, '').replace(/^[🛡️👤]\s*/, '').trim() || 'Thành viên VERA';
+      const caption = ta ? ta.value.trim() : '';
+      const card = document.createElement('div');
+      card.style.cssText = 'background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:16px;margin-top:16px;color:#f8fafc;';
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div>
+            <div style="font-size:14px;font-weight:700;">${authorName}</div>
+            <div style="font-size:11px;color:#94a3b8;">Vừa xong • Kiểm duyệt ${sec}s (${modelName})</div>
+          </div>
+          <span style="font-size:11px;background:rgba(16,185,129,0.15);color:#34d399;padding:3px 10px;border-radius:999px;border:1px solid rgba(16,185,129,0.35);">✅ Đã qua AI xem video</span>
+        </div>
+        ${caption ? `<div style="font-size:14px;margin-bottom:10px;white-space:pre-wrap;">${caption}</div>` : ''}
+        ${lastPickedVideo.blobUrl ? `<video src="${lastPickedVideo.blobUrl}" controls style="width:100%;max-height:460px;border-radius:12px;background:#000;"></video>` : ''}
+      `;
+      composer.parentElement.insertBefore(card, composer.nextSibling);
+      if (ta) ta.value = '';
+    }, 800);
+  }
+
   async function callSingleModel(apiKey, modelCfg, payload) {
     const bodyObj = JSON.parse(JSON.stringify(payload));
     bodyObj.generationConfig = Object.assign({}, bodyObj.generationConfig || {}, {
@@ -3842,101 +4024,110 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bodyData)
-      }, 12000);
+      }, 14000);
       const json = await resp.json().catch(() => ({}));
       return { resp, json };
     };
 
     let { resp, json } = await send(bodyObj);
-
-    // Nếu model từ chối tham số thinkingConfig (HTTP 400) -> tự động gọi lại bỏ thinkingConfig
     if (resp.status === 400 && bodyObj.generationConfig?.thinkingConfig) {
       delete bodyObj.generationConfig.thinkingConfig;
       ({ resp, json } = await send(bodyObj));
     }
 
-    if (resp.ok) {
-      return { ok: true, model: modelCfg.id, data: json };
-    }
-    return {
-      ok: false,
-      status: resp.status,
-      error: json?.error?.message || `Lỗi HTTP ${resp.status}`
-    };
+    if (resp.ok) return { ok: true, model: modelCfg.id, data: json };
+    return { ok: false, status: resp.status, error: json?.error?.message || `Lỗi HTTP ${resp.status}` };
   }
 
-  // Kiểm tra xem kết quả Tầng 1 có nằm ở vùng mập mờ cần Tầng 2 (Gemini 3.8 Flash) thẩm định lại không
-  function needsDeepVerification(resultData) {
-    try {
-      const txt = resultData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const clean = txt.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(clean);
-      const score = Number(parsed.riskScore);
-      return Number.isFinite(score) && score >= 30 && score < 75;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  // Ghi đè hàm fetchGeminiSmart toàn cục bằng phiên bản Turbo 2 tầng
   window.fetchGeminiSmart = async function (apiKey, payload) {
     const startMs = performance.now();
     const effectiveKey = (apiKey || '').trim() || (localStorage.getItem(SHARED_API_KEY) || '').trim();
     if (!effectiveKey) {
-      return { ok: false, error: 'Chưa có Gemini API Key. Admin hãy nhập khóa trong bảng cấu hình.' };
+      showModerationToast('error', '⚠️ Chưa nhập Gemini API Key', 'Admin hãy vào cài đặt nhập API Key để kích hoạt kiểm duyệt AI.');
+      return { ok: false, error: 'Chưa có Gemini API Key.' };
     }
     localStorage.setItem(SHARED_API_KEY, effectiveKey);
 
-    // 1. Tối ưu video/chuỗi ảnh thành 1 tấm Storyboard 3x3 siêu nhẹ (~150KB)
-    const fastPayload = await optimizePayloadForSpeed(payload);
-    let lastError = 'Không thể kết nối tới máy chủ Gemini AI';
+    const parts = payload?.contents?.[0]?.parts || [];
+    const isModerationCall = payload?.generationConfig?.responseMimeType === 'application/json' ||
+                             parts.some(p => p.inlineData);
 
-    // 2. Chạy Tầng 1 siêu tốc (Gemini 3.5 Flash-Lite / 3.1 Flash-Lite)
-    for (const cfg of TIER1_FAST_MODELS) {
+    const ta = document.querySelector('textarea');
+    const composer = ta ? (ta.closest('div[class*="rounded"]') || ta.parentElement) : null;
+    const prevFeedVideoCount = Array.from(document.querySelectorAll('video')).filter(v => !composer || !composer.contains(v)).length;
+
+    if (isModerationCall) {
+      showModerationToast('loading', '⏳ AI VERA đang kiểm duyệt video...', 'Đang tạo lưới khung hình Storyboard 3×3 và phân tích an toàn...');
+    }
+
+    const fastPayload = isModerationCall ? await optimizePayloadForSpeed(payload) : payload;
+    let lastError = 'Không thể kết nối tới máy chủ Gemini AI';
+    let finalRes = null;
+
+    const allTiers = [...TIER1_FAST_MODELS, ...TIER2_DEEP_MODELS];
+    for (let i = 0; i < allTiers.length; i++) {
+      const cfg = allTiers[i];
       try {
         const res = await callSingleModel(effectiveKey, cfg, fastPayload);
         if (res.ok) {
-          // Nếu đang kiểm duyệt JSON mà rơi vào vùng nghi vấn (30–74 điểm) -> Đẩy lên Tầng 2 (3.8 Flash) thẩm định chuẩn xác
-          if (fastPayload?.generationConfig?.responseMimeType === 'application/json' && needsDeepVerification(res.data)) {
-            console.log(`🔎 Vùng nghi vấn từ ${cfg.id}, đẩy lên Tầng 2 (Gemini 3.8 Flash) thẩm định lại...`);
-            for (const deepCfg of TIER2_DEEP_MODELS) {
-              try {
-                const deepRes = await callSingleModel(effectiveKey, deepCfg, fastPayload);
-                if (deepRes.ok) {
-                  const sec = ((performance.now() - startMs) / 1000).toFixed(1);
-                  console.log(`✅ Thẩm định chuyên sâu hoàn tất trong ${sec}s bằng ${deepCfg.id}`);
-                  return deepRes;
-                }
-              } catch (_) {}
+          finalRes = res;
+          if (isModerationCall && i < TIER1_FAST_MODELS.length) {
+            const v1 = extractAndNormalizeVerdict(res.data);
+            if (v1 && v1.riskScore >= 30 && v1.riskScore < 75) {
+              showModerationToast('loading', '🔎 Đang thẩm định chuyên sâu (Tầng 2)...', `Phát hiện dấu hiệu nghi vấn (${v1.riskScore}%), đang đối chiếu lại bằng Gemini 3.8 Flash...`);
+              for (const deepCfg of TIER2_DEEP_MODELS) {
+                try {
+                  const deepRes = await callSingleModel(effectiveKey, deepCfg, fastPayload);
+                  if (deepRes.ok) { finalRes = deepRes; break; }
+                } catch (_) {}
+              }
             }
           }
-          const sec = ((performance.now() - startMs) / 1000).toFixed(1);
-          console.log(`⚡ AI kiểm duyệt hoàn tất trong ${sec}s bằng ${res.model}`);
-          return res;
+          break;
         }
         lastError = res.error;
         console.warn(`⚠️ ${cfg.id} lỗi (${res.status}), chuyển model tiếp theo...`);
       } catch (err) {
-        lastError = err.name === 'AbortError' ? 'Quá thời gian phản hồi (12s)' : err.message;
+        lastError = err.name === 'AbortError' ? 'Quá thời gian phản hồi (14s)' : err.message;
       }
     }
 
-    // 3. Dự phòng Tầng 2 nếu Tầng 1 bận toàn bộ
-    for (const cfg of TIER2_DEEP_MODELS) {
-      try {
-        const res = await callSingleModel(effectiveKey, cfg, fastPayload);
-        if (res.ok) {
-          const sec = ((performance.now() - startMs) / 1000).toFixed(1);
-          console.log(`✅ AI dự phòng hoàn tất trong ${sec}s bằng ${res.model}`);
-          return res;
+    if (!finalRes) {
+      if (isModerationCall) {
+        showModerationToast('error', '❌ Lỗi Kiểm Duyệt (Fail-Closed)', `${lastError}. Video đã bị giữ lại để đảm bảo an toàn.`);
+      }
+      return { ok: false, error: lastError };
+    }
+
+    const sec = ((performance.now() - startMs) / 1000).toFixed(1);
+    console.log(`⚡ AI kiểm duyệt hoàn tất trong ${sec}s bằng ${finalRes.model}`);
+
+    if (isModerationCall) {
+      const verdict = extractAndNormalizeVerdict(finalRes.data);
+      console.log('📋 Kết quả AI chuẩn hóa:', verdict);
+      if (verdict) {
+        injectNormalizedJsonIntoData(finalRes.data, verdict);
+        if (verdict.isSafe) {
+          showModerationToast(
+            'safe',
+            `✅ Đã duyệt AN TOÀN (${sec}s • Rủi ro ${verdict.riskScore}%)`,
+            `${verdict.reason} Đang hiển thị video lên Bảng tin.`
+          );
+          ensureVideoPostedToFeedIfMissing(prevFeedVideoCount, verdict, finalRes.model, sec);
+        } else {
+          showModerationToast(
+            'blocked',
+            `🚫 AI ĐÃ CHẶN VIDEO (${sec}s • Rủi ro ${verdict.riskScore}%)`,
+            `${verdict.reason} Đã chuyển vào Hàng đợi Quản trị AI.`
+          );
+          pushBlockedToAdminQueue(verdict);
         }
-        lastError = res.error;
-      } catch (err) {
-        lastError = err.name === 'AbortError' ? 'Quá thời gian phản hồi (12s)' : err.message;
+      } else {
+        showModerationToast('error', '⚠️ AI trả về định dạng lạ (Fail-Closed)', 'Hệ thống đã tạm chặn video để Admin kiểm tra thủ công.');
       }
     }
 
-    return { ok: false, error: lastError };
+    return finalRes;
   };
 })();
 </script>
