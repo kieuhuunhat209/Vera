@@ -3649,472 +3649,294 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
   });
 })();
 </script>
-<!-- ==================== VERA PERSISTENT LOGIN & UNIVERSAL ACCOUNT LINKING ==================== -->
+<!-- ==================== VERA AI MODERATION TURBO v2 (STORYBOARD 3x3 + 2-TIER GEMINI 3.5/3.8) ==================== -->
 <script>
 (function () {
-  const ACCOUNTS_KEY = 'vera_independent_accounts_v2';
-  const LEGACY_ACCOUNTS_KEY = 'vera_independent_accounts_v1';
-  const ACTIVE_UID_KEY = 'vera_active_uid_v2';
-  const LAST_SESSION_KEY = 'vera_persistent_session_v1';
-  const FRIENDS_KEY = 'vera_friends_graph_v1';
-  const SENDER_MSGS_KEY = 'vera_sender_only_messages_v1';
+  const SHARED_API_KEY = 'vera_shared_gemini_key_v1';
 
-  let searchKeyword = '';
-  let activePeerId = null;
+  // Tầng 1: Quét siêu tốc (2–4s) | Tầng 2: Thẩm định sâu các ca nghi vấn & dự phòng
+  const TIER1_FAST_MODELS = [
+    { id: 'gemini-3.5-flash-lite', thinkingLevel: 'minimal' },
+    { id: 'gemini-3.1-flash-lite', thinkingLevel: 'minimal' }
+  ];
+  const TIER2_DEEP_MODELS = [
+    { id: 'gemini-3.8-flash', thinkingLevel: 'low' },
+    { id: 'gemini-3.6-flash', thinkingLevel: 'low' }
+  ];
 
-  function readJSON(key, fallback) {
+  // Hàm fetch có giới hạn thời gian chờ (mặc định 12 giây để không bao giờ bị treo)
+  async function fetchWithTimeout(url, options, timeoutMs = 12000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch (e) {
-      return fallback;
+      return await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  function writeJSON(key, val) {
-    try {
-      localStorage.setItem(key, JSON.stringify(val));
-    } catch (e) {}
+  // Format mốc giây mm:ss để in lên góc từng khung hình
+  function fmtSec(sec) {
+    const s = Math.max(0, Math.floor(sec || 0));
+    const m = Math.floor(s / 60);
+    return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   }
 
-  // 1. Hợp nhất toàn bộ tài khoản từ mọi nguồn (mẫu + đăng ký mới + Google + Admin)
-  function getUnifiedAccounts() {
-    const v2 = readJSON(ACCOUNTS_KEY, {});
-    const v1 = readJSON(LEGACY_ACCOUNTS_KEY, {});
-    const merged = Object.assign({}, v1, v2);
+  // Cắt 9 khung hình trải đều từ video Base64 -> Ghép thành 1 ảnh Storyboard 3x3 siêu nhẹ (~150KB)
+  async function buildStoryboardFromVideoBase64(base64Data, mimeType) {
+    return new Promise((resolve) => {
+      try {
+        const byteChars = atob(base64Data);
+        const bytes = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+        const blob = new Blob([bytes], { type: mimeType || 'video/mp4' });
+        const url = URL.createObjectURL(blob);
 
-    if (typeof USERS !== 'undefined' && USERS) {
-      Object.keys(USERS).forEach(uid => {
-        if (!merged[uid]) {
-          merged[uid] = {
-            id: uid,
-            uid: uid,
-            name: (USERS[uid].name || uid).replace(/SafeBook/gi, 'VERA'),
-            handle: (USERS[uid].handle || ('@' + uid)).replace(/safebook/gi, 'vera'),
-            email: USERS[uid].email || `${uid}@vera.vn`,
-            avatar: USERS[uid].avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(uid)}`,
-            bio: USERS[uid].bio || 'Thành viên cộng đồng VERA',
-            provider: uid === 'admin' ? 'system' : 'local',
-            role: uid === 'admin' ? 'admin' : 'user',
-            friends: Array.isArray(USERS[uid].friends) ? [...USERS[uid].friends] : [],
-            password: uid === 'admin' ? 'vera@2026' : ''
+        const video = document.createElement('video');
+        video.src = url;
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+
+        const cols = 3, rows = 3, total = 9;
+        const cellW = 384, cellH = 216;
+        const canvas = document.createElement('canvas');
+        canvas.width = cols * cellW;
+        canvas.height = rows * cellH;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        let done = false;
+        let captured = 0;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(hardTimer);
+          URL.revokeObjectURL(url);
+          if (captured === 0) return resolve(null);
+          resolve(canvas.toDataURL('image/jpeg', 0.72).split(',')[1]);
+        };
+        const hardTimer = setTimeout(finish, 6000);
+
+        video.onerror = finish;
+        video.onloadedmetadata = () => {
+          const duration = isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
+          let idx = 0;
+
+          const drawCell = () => {
+            const c = idx % cols;
+            const r = Math.floor(idx / cols);
+            const x = c * cellW;
+            const y = r * cellH;
+            try {
+              ctx.drawImage(video, x, y, cellW, cellH);
+              // In nhãn số thứ tự & mốc giây lên góc trái mỗi ô
+              const stamp = `#${idx + 1} (${fmtSec(((idx + 0.5) / total) * duration)})`;
+              ctx.fillStyle = 'rgba(0,0,0,0.72)';
+              ctx.fillRect(x + 6, y + 6, 94, 22);
+              ctx.fillStyle = '#38bdf8';
+              ctx.font = 'bold 13px sans-serif';
+              ctx.fillText(stamp, x + 12, y + 21);
+              captured++;
+            } catch (_) {}
+
+            idx++;
+            if (idx < total) {
+              video.currentTime = Math.min(duration - 0.05, ((idx + 0.5) / total) * duration);
+            } else {
+              finish();
+            }
           };
-        }
-        // Đồng bộ ngược lại vào biến USERS gốc để mọi phần của web đều nhận diện được
-        USERS[uid] = Object.assign({}, USERS[uid], merged[uid]);
-      });
-    }
 
-    Object.keys(merged).forEach(uid => {
-      if (typeof USERS !== 'undefined' && USERS && !USERS[uid]) {
-        USERS[uid] = merged[uid];
+          video.onseeked = drawCell;
+          video.currentTime = Math.min(duration - 0.05, (0.5 / total) * duration);
+        };
+      } catch (_) {
+        resolve(null);
       }
     });
-
-    writeJSON(ACCOUNTS_KEY, merged);
-    return merged;
   }
 
-  // 2. Duy trì phiên đăng nhập tự động cho các lần truy cập sau
-  function getSavedSessionUid() {
-    const directUid = localStorage.getItem(ACTIVE_UID_KEY);
-    if (directUid) return directUid;
-    const persistent = readJSON(LAST_SESSION_KEY, null);
-    if (persistent && persistent.uid) {
-      localStorage.setItem(ACTIVE_UID_KEY, persistent.uid);
-      return persistent.uid;
+  // Nếu code cũ đã tách sẵn chuỗi nhiều ảnh (vd 12 khung hình) -> Gộp gọn vào 1 lưới 3x3 siêu nhẹ
+  async function stitchImagePartsToStoryboard(imageParts) {
+    const selected = [];
+    const targetCount = Math.min(9, imageParts.length);
+    for (let i = 0; i < targetCount; i++) {
+      const pickIdx = Math.floor((i * imageParts.length) / targetCount);
+      selected.push(imageParts[pickIdx]);
     }
-    return '';
+
+    const cols = 3, rows = Math.ceil(selected.length / 3);
+    const cellW = 384, cellH = 216;
+    const canvas = document.createElement('canvas');
+    canvas.width = cols * cellW;
+    canvas.height = rows * cellH;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    await Promise.all(selected.map((part, idx) => new Promise((res) => {
+      const img = new Image();
+      img.onload = () => {
+        const x = (idx % cols) * cellW;
+        const y = Math.floor(idx / cols) * cellH;
+        ctx.drawImage(img, x, y, cellW, cellH);
+        ctx.fillStyle = 'rgba(0,0,0,0.72)';
+        ctx.fillRect(x + 6, y + 6, 46, 22);
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.fillText(`#${idx + 1}`, x + 12, y + 21);
+        res();
+      };
+      img.onerror = res;
+      img.src = `data:${part.inlineData.mimeType || 'image/jpeg'};base64,${part.inlineData.data}`;
+    })));
+
+    return canvas.toDataURL('image/jpeg', 0.72).split(',')[1];
   }
 
-  function persistUserSession(uid) {
-    if (!uid) return;
-    localStorage.setItem(ACTIVE_UID_KEY, uid);
-    writeJSON(LAST_SESSION_KEY, { uid: uid, savedAt: Date.now() });
+  // Tối ưu payload: tự động nén video thô hoặc chuỗi >= 3 ảnh thành 1 ảnh Storyboard 3x3
+  async function optimizePayloadForSpeed(payload) {
+    const origParts = payload?.contents?.[0]?.parts;
+    if (!Array.isArray(origParts) || origParts.length === 0) return payload;
+
+    const videoPart = origParts.find(p => p.inlineData?.mimeType?.startsWith('video/'));
+    const imageParts = origParts.filter(p => p.inlineData?.mimeType?.startsWith('image/'));
+    const textParts = origParts.filter(p => !p.inlineData);
+
+    let storyboardBase64 = null;
+    if (videoPart) {
+      storyboardBase64 = await buildStoryboardFromVideoBase64(videoPart.inlineData.data, videoPart.inlineData.mimeType);
+    } else if (imageParts.length >= 3) {
+      storyboardBase64 = await stitchImagePartsToStoryboard(imageParts);
+    }
+
+    if (!storyboardBase64) return payload;
+
+    const gridHint = {
+      text:
+        '[HƯỚNG DẪN PHÂN TÍCH LƯỚI KHUNG HÌNH]: Ảnh đính kèm là bảng Storyboard 3x3 gồm các khung hình cắt đều theo thứ tự thời gian từ trái sang phải, trên xuống dưới (#1 -> #9). ' +
+        'Hãy phân tích diễn biến liên tiếp giữa các khung hình để phát hiện chính xác bạo lực học đường (đấm, đá, túm tóc, hội đồng), máu me, hung khí hoặc nội dung 18+; phân biệt rõ với thể thao hay vui chơi bình thường.'
+    };
+
+    const nextPayload = Object.assign({}, payload, {
+      contents: [{
+        role: payload.contents[0].role || 'user',
+        parts: [...textParts, gridHint, { inlineData: { mimeType: 'image/jpeg', data: storyboardBase64 } }]
+      }]
+    });
+    return nextPayload;
   }
 
-  function clearUserSession() {
-    localStorage.removeItem(ACTIVE_UID_KEY);
-    localStorage.removeItem(LAST_SESSION_KEY);
+  // Gọi 1 model cụ thể với thinkingLevel tối ưu
+  async function callSingleModel(apiKey, modelCfg, payload) {
+    const bodyObj = JSON.parse(JSON.stringify(payload));
+    bodyObj.generationConfig = Object.assign({}, bodyObj.generationConfig || {}, {
+      thinkingConfig: { thinkingLevel: modelCfg.thinkingLevel }
+    });
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelCfg.id}:generateContent?key=${apiKey}`;
+    const send = async (bodyData) => {
+      const resp = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyData)
+      }, 12000);
+      const json = await resp.json().catch(() => ({}));
+      return { resp, json };
+    };
+
+    let { resp, json } = await send(bodyObj);
+
+    // Nếu model từ chối tham số thinkingConfig (HTTP 400) -> tự động gọi lại bỏ thinkingConfig
+    if (resp.status === 400 && bodyObj.generationConfig?.thinkingConfig) {
+      delete bodyObj.generationConfig.thinkingConfig;
+      ({ resp, json } = await send(bodyObj));
+    }
+
+    if (resp.ok) {
+      return { ok: true, model: modelCfg.id, data: json };
+    }
+    return {
+      ok: false,
+      status: resp.status,
+      error: json?.error?.message || `Lỗi HTTP ${resp.status}`
+    };
   }
 
-  function restoreSessionOnBoot() {
-    const accounts = getUnifiedAccounts();
-    const uid = getSavedSessionUid();
-    if (uid && accounts[uid]) {
-      persistUserSession(uid);
-      const user = accounts[uid];
+  // Kiểm tra xem kết quả Tầng 1 có nằm ở vùng mập mờ cần Tầng 2 (Gemini 3.8 Flash) thẩm định lại không
+  function needsDeepVerification(resultData) {
+    try {
+      const txt = resultData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const clean = txt.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(clean);
+      const score = Number(parsed.riskScore);
+      return Number.isFinite(score) && score >= 30 && score < 75;
+    } catch (_) {
+      return false;
+    }
+  }
 
-      // Đóng cổng đăng nhập nếu đang mở và nạp thẳng giao diện tài khoản đã lưu
-      const overlay = document.getElementById('vera-auth-overlay');
-      if (overlay) overlay.style.display = 'none';
+  // Ghi đè hàm fetchGeminiSmart toàn cục bằng phiên bản Turbo 2 tầng
+  window.fetchGeminiSmart = async function (apiKey, payload) {
+    const startMs = performance.now();
+    const effectiveKey = (apiKey || '').trim() || (localStorage.getItem(SHARED_API_KEY) || '').trim();
+    if (!effectiveKey) {
+      return { ok: false, error: 'Chưa có Gemini API Key. Admin hãy nhập khóa trong bảng cấu hình.' };
+    }
+    localStorage.setItem(SHARED_API_KEY, effectiveKey);
 
+    // 1. Tối ưu video/chuỗi ảnh thành 1 tấm Storyboard 3x3 siêu nhẹ (~150KB)
+    const fastPayload = await optimizePayloadForSpeed(payload);
+    let lastError = 'Không thể kết nối tới máy chủ Gemini AI';
+
+    // 2. Chạy Tầng 1 siêu tốc (Gemini 3.5 Flash-Lite / 3.1 Flash-Lite)
+    for (const cfg of TIER1_FAST_MODELS) {
       try {
-        if (typeof currentUserId !== 'undefined') currentUserId = user.id;
-        if (typeof currentUser !== 'undefined') currentUser = user;
-      } catch (_) {}
-
-      const navBtn = document.getElementById('vera-nav-account-btn');
-      if (navBtn) {
-        navBtn.innerHTML = user.role === 'admin'
-          ? `🛡️ ${user.name} • Đăng xuất`
-          : `👤 ${user.name} • Đăng xuất`;
-      }
-
-      const leftHandle = Array.from(document.querySelectorAll('p, span, div')).find(
-        el => el.children.length === 0 && el.textContent.trim().startsWith('@')
-      );
-      if (leftHandle) {
-        leftHandle.textContent = user.handle;
-        const nameEl = leftHandle.previousElementSibling;
-        if (nameEl) nameEl.textContent = user.name;
-        const card = leftHandle.closest('div')?.parentElement;
-        const avatarImg = card?.querySelector('img');
-        if (avatarImg && user.avatar) avatarImg.src = user.avatar;
+        const res = await callSingleModel(effectiveKey, cfg, fastPayload);
+        if (res.ok) {
+          // Nếu đang kiểm duyệt JSON mà rơi vào vùng nghi vấn (30–74 điểm) -> Đẩy lên Tầng 2 (3.8 Flash) thẩm định chuẩn xác
+          if (fastPayload?.generationConfig?.responseMimeType === 'application/json' && needsDeepVerification(res.data)) {
+            console.log(`🔎 Vùng nghi vấn từ ${cfg.id}, đẩy lên Tầng 2 (Gemini 3.8 Flash) thẩm định lại...`);
+            for (const deepCfg of TIER2_DEEP_MODELS) {
+              try {
+                const deepRes = await callSingleModel(effectiveKey, deepCfg, fastPayload);
+                if (deepRes.ok) {
+                  const sec = ((performance.now() - startMs) / 1000).toFixed(1);
+                  console.log(`✅ Thẩm định chuyên sâu hoàn tất trong ${sec}s bằng ${deepCfg.id}`);
+                  return deepRes;
+                }
+              } catch (_) {}
+            }
+          }
+          const sec = ((performance.now() - startMs) / 1000).toFixed(1);
+          console.log(`⚡ AI kiểm duyệt hoàn tất trong ${sec}s bằng ${res.model}`);
+          return res;
+        }
+        lastError = res.error;
+        console.warn(`⚠️ ${cfg.id} lỗi (${res.status}), chuyển model tiếp theo...`);
+      } catch (err) {
+        lastError = err.name === 'AbortError' ? 'Quá thời gian phản hồi (12s)' : err.message;
       }
     }
-  }
 
-  // Bọc thêm các hàm đăng nhập/đăng ký/đăng xuất của VeraSystem để luôn ghi nhớ phiên
-  function hookSessionPersistence() {
-    if (!window.VeraSystem || window.VeraSystem._sessionHooked) return;
-    const origLogout = window.VeraSystem.logoutCurrentUser;
-    window.VeraSystem.logoutCurrentUser = function () {
-      clearUserSession();
-      if (typeof origLogout === 'function') origLogout.apply(this, arguments);
-    };
-
-    const origSwitch = window.VeraSystem.quickSwitchAccount;
-    window.VeraSystem.quickSwitchAccount = function (uid) {
-      persistUserSession(uid);
-      if (typeof origSwitch === 'function') origSwitch.apply(this, arguments);
-    };
-    window.VeraSystem._sessionHooked = true;
-  }
-
-  // 3. Hệ thống Kết bạn 2 chiều & Liên kết mã tài khoản giữa các trình duyệt/thiết bị
-  function getFriendsGraph() {
-    const graph = readJSON(FRIENDS_KEY, {});
-    const accounts = getUnifiedAccounts();
-    Object.keys(accounts).forEach(uid => {
-      if (!Array.isArray(graph[uid])) {
-        graph[uid] = Array.isArray(accounts[uid].friends) ? [...accounts[uid].friends] : [];
-      }
-    });
-    return graph;
-  }
-
-  function saveFriendsGraph(graph) {
-    writeJSON(FRIENDS_KEY, graph);
-    const accounts = getUnifiedAccounts();
-    Object.keys(graph).forEach(uid => {
-      if (accounts[uid]) {
-        accounts[uid].friends = [...graph[uid]];
-        if (typeof USERS !== 'undefined' && USERS[uid]) {
-          USERS[uid].friends = [...graph[uid]];
-        }
-      }
-    });
-    writeJSON(ACCOUNTS_KEY, accounts);
-  }
-
-  function renderUniversalConnectBox() {
-    const panel = document.getElementById('vera-oneway-messenger');
-    const myUid = getSavedSessionUid();
-    if (!panel || !myUid) return;
-
-    const accounts = getUnifiedAccounts();
-    const me = accounts[myUid];
-    if (!me) return;
-
-    // Hiển thị tất cả tài khoản khác trong hệ thống (bao gồm cả tài khoản đăng ký mới, Google và Admin)
-    const allOthers = Object.values(accounts).filter(u => u.id !== myUid);
-    const graph = getFriendsGraph();
-    const myFriends = Array.isArray(graph[myUid]) ? graph[myUid] : [];
-
-    const q = searchKeyword.trim().toLowerCase();
-    const matched = q
-      ? allOthers.filter(u =>
-          (u.name || '').toLowerCase().includes(q) ||
-          (u.handle || '').toLowerCase().includes(q) ||
-          (u.email || '').toLowerCase().includes(q) ||
-          (u.id || '').toLowerCase().includes(q)
-        )
-      : allOthers;
-
-    if (!activePeerId || !accounts[activePeerId] || activePeerId === myUid) {
-      activePeerId = matched[0]?.id || allOthers[0]?.id || null;
-    }
-    const peer = activePeerId ? accounts[activePeerId] : null;
-    const sentThread = readJSON(SENDER_MSGS_KEY, []).filter(
-      m => m && m.senderId === myUid && (!peer || m.recipientId === peer.id)
-    );
-
-    panel.innerHTML = `
-      <div style="background:#020617;padding:12px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;">
-        <div>
-          <div style="font-size:14px;font-weight:700;">🤝 Liên Kết Tài Khoản, Kết Bạn & Nhắn Tin</div>
-          <div style="font-size:11px;color:#94a3b8;">Bạn bè của bạn: <b>${myFriends.length}</b> • Tổng tài khoản: <b>${allOthers.length + 1}</b></div>
-        </div>
-        <button type="button" onclick="document.getElementById('vera-oneway-messenger').style.display='none'" style="background:#1e293b;border:none;color:#94a3b8;width:28px;height:28px;border-radius:8px;cursor:pointer;">✕</button>
-      </div>
-
-      <!-- Thanh tìm kiếm & nút đồng bộ mã tài khoản giữa 2 máy -->
-      <div style="padding:10px 12px;border-bottom:1px solid #1e293b;background:#0b1220;">
-        <div style="display:flex;gap:6px;margin-bottom:8px;">
-          <input id="vera-universal-search" type="text" value="${searchKeyword.replace(/"/g, '&quot;')}"
-            oninput="window.VeraUniversalLink.search(this.value)"
-            placeholder="Tìm theo tên, @handle, email hoặc UID..."
-            style="flex:1;background:#1e293b;border:1px solid #334155;color:#f8fafc;border-radius:10px;padding:7px 10px;font-size:12px;outline:none;">
-          <button type="button" onclick="window.VeraUniversalLink.toggleSyncBox()" title="Đồng bộ tài khoản từ máy khác"
-            style="padding:7px 10px;border-radius:10px;border:1px solid #3b82f6;background:#172554;color:#93c5fd;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">
-            🔗 Mã liên kết
-          </button>
-        </div>
-
-        <!-- Khung xuất/nhập mã liên kết tài khoản giữa 2 thiết bị -->
-        <div id="vera-sync-code-drawer" style="display:none;background:#020617;border:1px solid #334155;border-radius:10px;padding:10px;margin-bottom:8px;font-size:11px;">
-          <div style="color:#93c5fd;font-weight:600;margin-bottom:4px;">Liên kết tài khoản tạo ở máy/trình duyệt khác:</div>
-          <div style="display:flex;gap:6px;margin-bottom:6px;">
-            <button type="button" onclick="window.VeraUniversalLink.copyMyAccountCode()" style="flex:1;padding:6px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-weight:600;cursor:pointer;">📋 Sao chép mã acc của tôi</button>
-          </div>
-          <div style="display:flex;gap:6px;">
-            <input id="vera-import-code-input" type="text" placeholder="Dán mã acc của bạn bè vào đây..." style="flex:1;background:#1e293b;border:1px solid #334155;color:#f8fafc;border-radius:8px;padding:5px 8px;font-size:11px;">
-            <button type="button" onclick="window.VeraUniversalLink.importFriendCode()" style="padding:5px 10px;border-radius:8px;border:none;background:#059669;color:#fff;font-weight:600;cursor:pointer;">Thêm</button>
-          </div>
-        </div>
-
-        <div style="display:flex;flex-direction:column;gap:7px;max-height:165px;overflow-y:auto;">
-          ${matched.length === 0
-            ? '<div style="text-align:center;color:#64748b;font-size:12px;padding:10px;">Không tìm thấy tài khoản nào khớp từ khóa.</div>'
-            : matched.map(u => {
-                const isFriend = myFriends.includes(u.id);
-                const isSelected = u.id === activePeerId;
-                return `
-                  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;border-radius:12px;background:${isSelected ? '#172554' : '#0f172a'};border:1px solid ${isSelected ? '#3b82f6' : '#1e293b'};">
-                    <div onclick="window.VeraUniversalLink.selectPeer('${u.id}')" style="display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer;">
-                      <img src="${u.avatar}" style="width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;">
-                      <div style="min-width:0;">
-                        <div style="font-size:12px;font-weight:700;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                          ${u.name} ${u.role === 'admin' ? '<span style="font-size:9px;background:#d97706;color:#fff;padding:1px 5px;border-radius:4px;">Admin</span>' : ''}
-                        </div>
-                        <div style="font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${u.handle} • ${u.email || u.id}</div>
-                      </div>
-                    </div>
-                    <div style="display:flex;gap:5px;flex-shrink:0;">
-                      <button type="button" onclick="window.VeraUniversalLink.toggleFriend('${u.id}')"
-                        style="padding:5px 9px;border-radius:8px;border:none;font-size:11px;font-weight:600;cursor:pointer;background:${isFriend ? '#065f46' : '#2563eb'};color:#fff;">
-                        ${isFriend ? '✓ Bạn bè' : '+ Kết bạn'}
-                      </button>
-                      <button type="button" onclick="window.VeraUniversalLink.selectPeer('${u.id}')"
-                        style="padding:5px 8px;border-radius:8px;border:1px solid #334155;background:#020617;color:#e2e8f0;font-size:11px;font-weight:600;cursor:pointer;">
-                        Chat
-                      </button>
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-        </div>
-      </div>
-
-      <!-- Khung nhắn tin -->
-      <div style="padding:8px 14px;border-bottom:1px solid #1e293b;background:#0f172a;font-size:12px;">
-        ${peer
-          ? `<b>Nhắn tới:</b> ${peer.name} <span style="color:#94a3b8;">(${peer.handle})</span>`
-          : '<span style="color:#94a3b8;">Chọn tài khoản ở trên để nhắn tin</span>'}
-      </div>
-
-      <div id="vera-universal-chat-scroll" style="height:165px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#090e1a;">
-        ${!peer
-          ? '<div style="text-align:center;color:#64748b;font-size:12px;margin-top:50px;">Chưa chọn người nhận.</div>'
-          : (sentThread.length === 0
-              ? `<div style="text-align:center;color:#64748b;font-size:12px;margin-top:45px;">Chưa có tin nhắn gửi tới <b>${peer.name}</b>.<br>Chỉ bạn thấy tin mình gửi; bên nhận không nhận được.</div>`
-              : sentThread.map(m => `
-                  <div style="align-self:flex-end;max-width:82%;background:#2563eb;color:#fff;padding:8px 12px;border-radius:12px;font-size:12px;line-height:1.4;">
-                    <div>${m.text}</div>
-                    <div style="font-size:10px;opacity:0.75;margin-top:3px;text-align:right;">Đã gửi • ${m.time}</div>
-                  </div>
-                `).join(''))}
-      </div>
-
-      <form onsubmit="event.preventDefault();window.VeraUniversalLink.sendMessage();" style="padding:10px;border-top:1px solid #1e293b;display:flex;gap:8px;background:#020617;">
-        <input id="vera-universal-msg-input" type="text"
-          placeholder="${peer ? 'Nhắn cho ' + peer.name + '...' : 'Nhập tin nhắn...'}"
-          style="flex:1;background:#1e293b;border:1px solid #334155;color:#f8fafc;border-radius:10px;padding:8px 12px;font-size:12px;outline:none;">
-        <button type="submit" style="padding:8px 14px;border-radius:10px;border:none;background:#2563eb;color:#fff;font-weight:600;font-size:12px;cursor:pointer;">Gửi</button>
-      </form>
-    `;
-
-    const sc = document.getElementById('vera-universal-chat-scroll');
-    if (sc) sc.scrollTop = sc.scrollHeight;
-  }
-
-  window.VeraUniversalLink = {
-    search(val) {
-      searchKeyword = val || '';
-      renderUniversalConnectBox();
-      setTimeout(() => {
-        const inp = document.getElementById('vera-universal-search');
-        if (inp) {
-          inp.focus();
-          inp.setSelectionRange(inp.value.length, inp.value.length);
-        }
-      }, 10);
-    },
-    selectPeer(uid) {
-      activePeerId = uid;
-      renderUniversalConnectBox();
-    },
-    toggleFriend(targetUid) {
-      const myUid = getSavedSessionUid();
-      if (!myUid || !targetUid || myUid === targetUid) return;
-      const graph = getFriendsGraph();
-      if (!Array.isArray(graph[myUid])) graph[myUid] = [];
-      if (!Array.isArray(graph[targetUid])) graph[targetUid] = [];
-
-      const idx = graph[myUid].indexOf(targetUid);
-      if (idx === -1) {
-        graph[myUid].push(targetUid);
-        if (!graph[targetUid].includes(myUid)) graph[targetUid].push(myUid);
-      } else {
-        graph[myUid].splice(idx, 1);
-        const revIdx = graph[targetUid].indexOf(myUid);
-        if (revIdx !== -1) graph[targetUid].splice(revIdx, 1);
-      }
-      saveFriendsGraph(graph);
-      renderUniversalConnectBox();
-    },
-    sendMessage() {
-      const myUid = getSavedSessionUid();
-      const inp = document.getElementById('vera-universal-msg-input');
-      if (!myUid || !activePeerId || !inp || !inp.value.trim()) return;
-      const list = readJSON(SENDER_MSGS_KEY, []);
-      const now = new Date();
-      list.push({
-        id: 'm_' + Date.now(),
-        senderId: myUid,
-        recipientId: activePeerId,
-        text: inp.value.trim(),
-        time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-      });
-      writeJSON(SENDER_MSGS_KEY, list);
-      inp.value = '';
-      renderUniversalConnectBox();
-      setTimeout(() => {
-        const nextInp = document.getElementById('vera-universal-msg-input');
-        if (nextInp) nextInp.focus();
-      }, 15);
-    },
-    toggleSyncBox() {
-      const drawer = document.getElementById('vera-sync-code-drawer');
-      if (drawer) drawer.style.display = drawer.style.display === 'none' ? 'block' : 'none';
-    },
-    copyMyAccountCode() {
-      const myUid = getSavedSessionUid();
-      const accounts = getUnifiedAccounts();
-      const me = accounts[myUid];
-      if (!me) return;
-      const payload = btoa(unescape(encodeURIComponent(JSON.stringify({
-        id: me.id, name: me.name, handle: me.handle, email: me.email, avatar: me.avatar, bio: me.bio
-      }))));
-      const code = 'VERA-ACC:' + payload;
-      navigator.clipboard?.writeText(code);
-      alert('Đã sao chép Mã Liên Kết Tài Khoản của bạn! Gửi mã này cho người khác để họ dán vào ô Thêm bạn.');
-    },
-    importFriendCode() {
-      const inp = document.getElementById('vera-import-code-input');
-      const raw = (inp?.value || '').trim();
-      if (!raw.startsWith('VERA-ACC:')) {
-        alert('Mã liên kết không hợp lệ (mã phải bắt đầu bằng VERA-ACC:).');
-        return;
-      }
+    // 3. Dự phòng Tầng 2 nếu Tầng 1 bận toàn bộ
+    for (const cfg of TIER2_DEEP_MODELS) {
       try {
-        const decoded = JSON.parse(decodeURIComponent(escape(atob(raw.replace('VERA-ACC:', '')))));
-        if (!decoded || !decoded.id) throw new Error('Invalid');
-        const accounts = getUnifiedAccounts();
-        accounts[decoded.id] = Object.assign({
-          uid: decoded.id, role: 'user', provider: 'linked', friends: []
-        }, accounts[decoded.id] || {}, decoded);
-        writeJSON(ACCOUNTS_KEY, accounts);
-        if (typeof USERS !== 'undefined' && USERS) USERS[decoded.id] = accounts[decoded.id];
-        this.toggleFriend(decoded.id);
-        alert(`Đã liên kết và kết bạn thành công với ${decoded.name}!`);
-      } catch (e) {
-        alert('Không thể giải mã tài khoản này, vui lòng kiểm tra lại chuỗi mã.');
+        const res = await callSingleModel(effectiveKey, cfg, fastPayload);
+        if (res.ok) {
+          const sec = ((performance.now() - startMs) / 1000).toFixed(1);
+          console.log(`✅ AI dự phòng hoàn tất trong ${sec}s bằng ${res.model}`);
+          return res;
+        }
+        lastError = res.error;
+      } catch (err) {
+        lastError = err.name === 'AbortError' ? 'Quá thời gian phản hồi (12s)' : err.message;
       }
     }
-  };
 
-  window.addEventListener('DOMContentLoaded', () => {
-    getUnifiedAccounts();
-    hookSessionPersistence();
-    restoreSessionOnBoot();
-
-    // Ghi nhận phiên mỗi khi đăng nhập hoặc đăng ký thành công
-    const origSetItem = localStorage.setItem.bind(localStorage);
-    localStorage.setItem = function (k, v) {
-      origSetItem(k, v);
-      if (k === ACTIVE_UID_KEY && v) {
-        writeJSON(LAST_SESSION_KEY, { uid: v, savedAt: Date.now() });
-      }
-    };
-
-    const obs = new MutationObserver(() => {
-      const panel = document.getElementById('vera-oneway-messenger');
-      if (panel && panel.style.display === 'block' && !document.getElementById('vera-universal-search')) {
-        renderUniversalConnectBox();
-      }
-    });
-    obs.observe(document.body, { childList: true, subtree: true });
-
-    document.addEventListener('click', (e) => {
-      const btn = e.target.closest('button, a, [role="button"]');
-      if (!btn) return;
-      const t = (btn.textContent || '');
-      if (t.includes('Kết bạn & Nhắn tin') || t.includes('Messenger') || t.startsWith('Bạn bè')) {
-        setTimeout(renderUniversalConnectBox, 100);
-      }
-    }, true);
-  });
-})();
-</script>
-<!-- ==================== VERA PERFORMANCE & ANTI-FREEZE GUARD ==================== -->
-<script>
-(function () {
-  // 1. Giới hạn tần suất gọi hàm nặng (debounce / throttle) để không khóa luồng giao diện Chrome
-  function createThrottle(fn, delayMs) {
-    let lastTime = 0;
-    let timer = null;
-    return function (...args) {
-      const now = Date.now();
-      const remaining = delayMs - (now - lastTime);
-      if (remaining <= 0) {
-        if (timer) {
-          clearTimeout(timer);
-          timer = null;
-        }
-        lastTime = now;
-        fn.apply(this, args);
-      } else if (!timer) {
-        timer = setTimeout(() => {
-          lastTime = Date.now();
-          timer = null;
-          fn.apply(this, args);
-        }, remaining);
-      }
-    };
-  }
-
-  // 2. Làm nhẹ các tác vụ quét UI định kỳ để tránh Chrome báo "làm chậm trình duyệt"
-  if (window.VeraAdminQueue && typeof window.VeraAdminQueue.refresh === 'function') {
-    window.VeraAdminQueue.refresh = createThrottle(window.VeraAdminQueue.refresh, 3000);
-  }
-
-  // 3. Tự ngắt các MutationObserver chạy quá dày khi đang mở modal/panel
-  const origObserve = MutationObserver.prototype.observe;
-  MutationObserver.prototype.observe = function (target, options) {
-    const safeOptions = Object.assign({ childList: true, subtree: false }, options || {});
-    return origObserve.call(this, target, safeOptions);
+    return { ok: false, error: lastError };
   };
 })();
 </script>
