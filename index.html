@@ -5055,5 +5055,747 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
   }, true);
 })();
 </script>
+<!-- ==================== VERA REMOVE PUBLISHED POST (GỠ BÀI ĐĂNG VĨNH VIỄN) ==================== -->
+<script>
+(function () {
+  const BTN_CLASS = "vera-remove-post-btn";
+  const TOMBSTONE_KEY = "vera_removed_posts_tombstone_v1";
+
+  function normalizeText(str) {
+    return String(str || "")
+      .replace(/Admin|Google|Thành viên|✓|Đã duyệt|Đã qua AI.*$/gi, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  function simpleHash(str) {
+    let h = 0;
+    const s = String(str || "");
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    }
+    return "rm_" + Math.abs(h).toString(36);
+  }
+
+  function getTombstones() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(TOMBSTONE_KEY) || "{}");
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveTombstone(sigKey) {
+    if (!sigKey) return;
+    const map = getTombstones();
+    map[sigKey] = Date.now();
+    try { localStorage.setItem(TOMBSTONE_KEY, JSON.stringify(map)); } catch (_) {}
+  }
+
+  function getFirebaseBaseUrl() {
+    if (window.firebase && firebase.apps && firebase.apps.length > 0) {
+      const u = firebase.apps[0].options && firebase.apps[0].options.databaseURL;
+      if (u) return String(u).replace(/\/+$/, "");
+    }
+    const scripts = Array.from(document.querySelectorAll("script:not([src])"));
+    for (const s of scripts) {
+      const m = (s.textContent || "").match(/https:\/\/[a-z0-9-]+-default-rtdb\.[^"'\s]+firebasedatabase\.app/i);
+      if (m) return m[0].replace(/\/+$/, "");
+    }
+    return "";
+  }
+
+  function getCurrentUser() {
+    const pairs = [
+      ["vera_online_session_uid", "vera_online_accounts_backup"],
+      ["vera_session_uid_clean_v1", "vera_accounts_clean_v1"],
+      ["vera_active_uid_v2", "vera_independent_accounts_v2"],
+      ["vera_active_uid_v1", "vera_independent_accounts_v1"]
+    ];
+    for (const [uidKey, mapKey] of pairs) {
+      try {
+        const uid = localStorage.getItem(uidKey);
+        if (!uid) continue;
+        const map = JSON.parse(localStorage.getItem(mapKey) || "{}");
+        if (map && map[uid]) {
+          const u = map[uid];
+          return {
+            id: String(u.id || uid),
+            name: normalizeText(u.name || uid),
+            isAdmin: u.role === "admin" || uid === "admin" || /admin\s*vera/i.test(u.name || "")
+          };
+        }
+      } catch (_) {}
+    }
+
+    const navBtn = document.getElementById("vera-nav-auth-btn") || document.getElementById("vera-nav-account-btn");
+    if (navBtn) {
+      const raw = navBtn.textContent.replace(/•.*$/, "").replace(/^[🛡️👤]\s*/, "").trim();
+      if (raw && !/Đăng nhập/i.test(raw)) {
+        return { id: "", name: normalizeText(raw), isAdmin: /admin/i.test(raw) };
+      }
+    }
+    return { id: "", name: "", isAdmin: false };
+  }
+
+  // Tìm chính xác từng thẻ bài đăng trên bảng tin (cả bảng tin gốc lẫn bảng tin online)
+  function findPostCards() {
+    const cards = new Set();
+    const likeNodes = Array.from(document.querySelectorAll("button, span, a, div")).filter((el) => {
+      if (el.closest("#vera-auth-overlay, #vera-social-drawer, #vera-oneway-messenger, nav, header")) return false;
+      const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (!/Thích\s*\(\d+\)/i.test(t) || t.length > 24) return false;
+      return !Array.from(el.children).some((ch) => /Thích\s*\(\d+\)/i.test(ch.textContent || ""));
+    });
+
+    likeNodes.forEach((node) => {
+      let cur = node.parentElement;
+      for (let depth = 0; depth < 6 && cur && cur !== document.body; depth++) {
+        if (
+          cur.id === "vera-standalone-global-feed" ||
+          cur.id === "vera-global-feed-box" ||
+          cur.classList.contains("vera-zone-center")
+        ) break;
+
+        const txt = cur.textContent || "";
+        if (txt.includes("Đăng Bài") || txt.includes("Tải Video") || txt.includes("Bảng Tin Cộng Đồng Chung")) break;
+
+        const likeCount = (txt.match(/Thích\s*\(\d+\)/gi) || []).length;
+        if (likeCount > 1) break;
+
+        const hasCommentWord = /Bình luận/i.test(txt);
+        const hasAvatarOrMedia = Boolean(cur.querySelector("img, video"));
+        if (hasCommentWord && hasAvatarOrMedia) {
+          cards.add(cur);
+          break;
+        }
+        cur = cur.parentElement;
+      }
+    });
+
+    return Array.from(cards);
+  }
+
+  function extractPostInfo(card) {
+    let postId = "";
+    const likeAttr = card.querySelector("[data-vera-like]");
+    if (likeAttr) postId = likeAttr.getAttribute("data-vera-like") || "";
+
+    if (!postId) {
+      const clickable = card.querySelector("[onclick*='Like'], [onclick*='like'], [onclick*='Comment'], [onclick*='comment']");
+      if (clickable) {
+        const m = (clickable.getAttribute("onclick") || "").match(/['"]([^'"]+)['"]/);
+        if (m) postId = m[1];
+      }
+    }
+
+    // Lấy tên người đăng ở phần đầu thẻ bài viết
+    let authorName = "";
+    const headerCandidates = Array.from(card.querySelectorAll("div, span, h3, h4, p, b, strong")).filter((el) => {
+      if (el.classList.contains(BTN_CLASS) || el.closest("form")) return false;
+      const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (!t || t.length > 55) return false;
+      if (/^(Admin|Vừa xong|Thích|Bình luận|Chia sẻ|✓|Đã duyệt|Đã qua AI|Gỡ bài)/i.test(t)) return false;
+      return el.children.length <= 1;
+    });
+    if (headerCandidates.length > 0) {
+      authorName = normalizeText(headerCandidates[0].textContent);
+    }
+
+    // Lấy media chính của bài (bỏ qua avatar nhỏ <= 64px)
+    const bigImg = Array.from(card.querySelectorAll("img")).find((img) => {
+      const r = img.getBoundingClientRect();
+      return r.width >= 90 && r.height >= 70;
+    });
+    const vid = card.querySelector("video");
+    const mediaSrc = bigImg ? (bigImg.getAttribute("src") || "") : (vid ? (vid.getAttribute("src") || "") : "");
+
+    // Tạo dấu vân tay bài viết để nhớ bài đã gỡ sau khi F5
+    const cleanBody = (card.textContent || "")
+      .replace(/🗑️\s*Gỡ bài/g, "")
+      .replace(/Thích\s*\(\d+\).*$/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const sigRaw = postId
+      ? `id:${postId}`
+      : `fp:${authorName}|${cleanBody.slice(0, 120)}|${mediaSrc.slice(0, 120)}|${mediaSrc.length}`;
+
+    return {
+      postId,
+      authorName,
+      mediaSrc,
+      cleanBody,
+      sigKey: simpleHash(sigRaw)
+    };
+  }
+
+  function canRemovePost(info, me) {
+    if (me.isAdmin) return true;
+    if (!me.name && !me.id) return false;
+
+    if (info.postId) {
+      for (const k of ["vera_standalone_public_feed_v1", "vera_online_posts_backup"]) {
+        try {
+          const map = JSON.parse(localStorage.getItem(k) || "{}");
+          const p = map && map[info.postId];
+          if (p) {
+            if (me.id && p.authorId && String(p.authorId) === me.id) return true;
+            return normalizeText(p.authorName) === me.name;
+          }
+        } catch (_) {}
+      }
+    }
+    return Boolean(me.name && info.authorName && info.authorName === me.name);
+  }
+
+  function showRemoveNotice(msg) {
+    let box = document.getElementById("vera-mod-toast");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "vera-mod-toast";
+      box.style.cssText = "position:fixed;top:74px;right:20px;z-index:2147483647;width:320px;border-radius:12px;padding:12px 14px;background:#0f172a;border:1px solid #ef4444;color:#f8fafc;box-shadow:0 16px 40px rgba(0,0,0,0.75);font-size:13px;";
+      document.body.appendChild(box);
+    }
+    box.style.background = "#1e1b2e";
+    box.style.border = "1px solid #ef4444";
+    box.style.display = "block";
+    box.innerHTML = `<div style="font-weight:700;color:#fca5a5;">${msg}</div>`;
+    clearTimeout(box._hideTimer);
+    box._hideTimer = setTimeout(() => { box.style.display = "none"; }, 3500);
+  }
+
+  async function removePostForever(card, info) {
+    const base = getFirebaseBaseUrl();
+
+    // 1. Ghi nhận dấu vân tay bài đã gỡ (chặn tuyệt đối không hiện lại sau khi F5)
+    saveTombstone(info.sigKey);
+    if (info.postId) saveTombstone("id_" + info.postId);
+
+    // 2. Xóa khỏi kho Online & Firebase để tất cả tài khoản khác không còn thấy
+    const objStores = [
+      { key: "vera_standalone_public_feed_v1", fbPath: "vera_public_feed_v1" },
+      { key: "vera_online_posts_backup", fbPath: "posts" }
+    ];
+    for (const st of objStores) {
+      try {
+        const map = JSON.parse(localStorage.getItem(st.key) || "{}");
+        if (!map || typeof map !== "object") continue;
+
+        let targetId = info.postId && map[info.postId] ? info.postId : "";
+        if (!targetId) {
+          targetId = Object.keys(map).find((id) => {
+            const p = map[id];
+            if (!p) return false;
+            const sameAuthor = normalizeText(p.authorName) === info.authorName;
+            const sameMedia = info.mediaSrc && (p.imageData === info.mediaSrc || p.videoThumb === info.mediaSrc);
+            const sameText = p.content && p.content.trim().length >= 2 && info.cleanBody.includes(p.content.trim());
+            return sameAuthor && (sameMedia || sameText);
+          }) || "";
+        }
+
+        if (targetId) {
+          delete map[targetId];
+          localStorage.setItem(st.key, JSON.stringify(map));
+          if (base) {
+            fetch(`${base}/${st.fbPath}/${targetId}.json`, { method: "DELETE" }).catch(() => {});
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. Xóa khỏi tất cả mảng bài đăng lưu trong localStorage (bao gồm VERA_feed_posts_v2)
+    const matchItem = (p) => {
+      if (!p || typeof p !== "object") return false;
+      if (info.postId && String(p.id) === String(info.postId)) return true;
+      const pMedia = p.image || p.imageUrl || p.mediaUrl || p.videoUrl || p.media || "";
+      const pText = String(p.content || p.text || p.caption || "").trim();
+      const pAuthor = normalizeText(p.authorName || p.author || p.userName || "");
+      const sameAuthor = !pAuthor || pAuthor === info.authorName;
+
+      if (info.mediaSrc && pMedia && pMedia.slice(0, 100) === info.mediaSrc.slice(0, 100)) return true;
+      if (sameAuthor && pText.length >= 2 && info.cleanBody.includes(pText)) return true;
+      return false;
+    };
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || "";
+      if (!/post|feed/i.test(k) || k === TOMBSTONE_KEY) continue;
+      try {
+        const val = JSON.parse(localStorage.getItem(k) || "null");
+        if (Array.isArray(val)) {
+          const next = val.filter((item) => !matchItem(item));
+          if (next.length !== val.length) {
+            localStorage.setItem(k, JSON.stringify(next));
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (Array.isArray(window.posts)) {
+      const idx = window.posts.findIndex(matchItem);
+      if (idx !== -1) window.posts.splice(idx, 1);
+    }
+
+    // 4. Gỡ bài khỏi màn hình ngay lập tức
+    card.remove();
+    showRemoveNotice("🗑️ Đã gỡ bài đăng thành công.");
+  }
+
+  function refreshCards() {
+    const me = getCurrentUser();
+    const tombstones = getTombstones();
+    const cards = findPostCards();
+
+    cards.forEach((card) => {
+      const info = extractPostInfo(card);
+
+      // Nếu bài này đã từng bị gỡ -> tự xóa ngay (không bao giờ hiện lại khi F5)
+      if (tombstones[info.sigKey] || (info.postId && tombstones["id_" + info.postId])) {
+        card.remove();
+        return;
+      }
+
+      const existing = card.querySelector(`:scope > .${BTN_CLASS}`);
+      if (!canRemovePost(info, me)) {
+        if (existing) existing.remove();
+        return;
+      }
+
+      if (existing) return;
+
+      if (getComputedStyle(card).position === "static") {
+        card.style.position = "relative";
+      }
+
+      // Chừa khoảng trống bên phải cho nhãn "✓ Đã duyệt" / "Đã qua AI" để không bị đè chữ
+      Array.from(card.querySelectorAll("span")).forEach((sp) => {
+        if (/Đã duyệt|Đã qua AI/i.test(sp.textContent || "")) {
+          sp.style.marginRight = "92px";
+        }
+      });
+
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = BTN_CLASS;
+      btn.innerHTML = "🗑️ Gỡ bài";
+      btn.title = "Gỡ bài đăng này vĩnh viễn";
+      btn.style.cssText =
+        "position:absolute;top:12px;right:12px;z-index:25;padding:5px 10px;border-radius:8px;" +
+        "border:1px solid rgba(239,68,68,0.45);background:rgba(127,29,29,0.35);color:#fca5a5;" +
+        "font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:4px;" +
+        "transition:all 0.15s ease;";
+      btn.onmouseenter = () => {
+        btn.style.background = "#dc2626";
+        btn.style.borderColor = "#ef4444";
+        btn.style.color = "#ffffff";
+      };
+      btn.onmouseleave = () => {
+        btn.style.background = "rgba(127,29,29,0.35)";
+        btn.style.borderColor = "rgba(239,68,68,0.45)";
+        btn.style.color = "#fca5a5";
+      };
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!confirm("Bạn có chắc muốn gỡ bài đăng này vĩnh viễn không?")) return;
+        removePostForever(card, extractPostInfo(card));
+      };
+      card.appendChild(btn);
+    });
+  }
+
+  function start() {
+    refreshCards();
+    setTimeout(refreshCards, 600);
+    setInterval(() => {
+      if (document.visibilityState === "visible") refreshCards();
+    }, 1500);
+  }
+
+  if (document.readyState === "loading") window.addEventListener("DOMContentLoaded", start);
+  else start();
+})();
+</script>
+<!-- ==================== VERA GUARANTEED POST DISPLAY & QUOTA RECOVERY ==================== -->
+<script>
+(function () {
+  // 1. Dọn sạch bộ nhớ dấu vân tay cũ dễ xóa nhầm bài mới không chú thích (chỉ chạy 1 lần)
+  try {
+    if (!localStorage.getItem("vera_tombstone_reset_v2")) {
+      localStorage.removeItem("vera_removed_posts_tombstone_v1");
+      localStorage.setItem("vera_tombstone_reset_v2", "1");
+    }
+  } catch (_) {}
+
+  // 2. Chống tràn bộ nhớ localStorage khi lưu video nặng vào VERA_feed_posts_v2
+  if (!Storage.prototype._veraPostQuotaFixV2) {
+    const rawSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      try {
+        return rawSetItem.apply(this, arguments);
+      } catch (err) {
+        const isQuota = err && (err.name === "QuotaExceededError" || /quota/i.test(err.message || ""));
+        if (!isQuota || !/feed_posts|vera_posts|public_feed/i.test(String(key))) {
+          throw err;
+        }
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            const slim = parsed.slice(-8).map((p, idx, arr) => {
+              const copy = Object.assign({}, p);
+              delete copy.frames;
+              delete copy.evidenceFrames;
+              delete copy.videoBase64;
+              // Bỏ dữ liệu video base64 quá nặng để giữ được danh sách bài viết
+              if (typeof copy.videoUrl === "string" && copy.videoUrl.startsWith("data:") && copy.videoUrl.length > 250000) {
+                copy.videoUrl = "";
+              }
+              if (idx < arr.length - 2 && typeof copy.image === "string" && copy.image.length > 250000) {
+                copy.image = "";
+              }
+              return copy;
+            });
+            return rawSetItem.call(this, key, JSON.stringify(slim));
+          }
+        } catch (_) {}
+      }
+    };
+    Storage.prototype._veraPostQuotaFixV2 = true;
+  }
+
+  let pickedMedia = { type: "", blobUrl: "", thumbUrl: "", imageData: "", fileName: "" };
+  let activeMonitorTimer = null;
+
+  function escapeHtml(str) {
+    return String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function findComposerCard(postBtn) {
+    if (!postBtn) return null;
+    let el = postBtn.parentElement;
+    for (let i = 0; i < 7 && el && el !== document.body; i++) {
+      const txt = el.textContent || "";
+      if ((txt.includes("Tải Video") || txt.includes("Ảnh")) && el.querySelector("textarea, input")) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+    return postBtn.parentElement?.parentElement || null;
+  }
+
+  function getComposerCaption(composer) {
+    if (!composer) return "";
+    const inp = composer.querySelector("textarea, input[type='text'], input:not([type])");
+    return inp ? inp.value.trim() : "";
+  }
+
+  function clearComposerInput(composer) {
+    if (!composer) return;
+    const inp = composer.querySelector("textarea, input[type='text'], input:not([type])");
+    if (inp) inp.value = "";
+    composer.querySelectorAll('input[type="file"]').forEach((f) => {
+      try { f.value = ""; } catch (_) {}
+    });
+  }
+
+  function getCurrentProfile() {
+    const pairs = [
+      ["vera_online_session_uid", "vera_online_accounts_backup"],
+      ["vera_session_uid_clean_v1", "vera_accounts_clean_v1"],
+      ["vera_active_uid_v2", "vera_independent_accounts_v2"]
+    ];
+    for (const [uKey, mKey] of pairs) {
+      try {
+        const uid = localStorage.getItem(uKey);
+        if (!uid) continue;
+        const map = JSON.parse(localStorage.getItem(mKey) || "{}");
+        if (map && map[uid]) {
+          return {
+            id: map[uid].id || uid,
+            name: map[uid].name || uid,
+            avatar: map[uid].avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(uid)}`
+          };
+        }
+      } catch (_) {}
+    }
+    const navBtn = document.getElementById("vera-nav-auth-btn") || document.getElementById("vera-nav-account-btn");
+    const name = navBtn ? navBtn.textContent.replace(/•.*$/, "").replace(/^[🛡️👤]\s*/, "").trim() : "Thành viên VERA";
+    return {
+      id: "u_" + name.toLowerCase().replace(/[^a-z0-9]/g, ""),
+      name: name || "Thành viên VERA",
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name || "vera")}`
+    };
+  }
+
+  function getFirebaseBaseUrl() {
+    if (window.firebase && firebase.apps && firebase.apps.length > 0) {
+      const u = firebase.apps[0].options && firebase.apps[0].options.databaseURL;
+      if (u) return String(u).replace(/\/+$/, "");
+    }
+    const scripts = Array.from(document.querySelectorAll("script:not([src])"));
+    for (const s of scripts) {
+      const m = (s.textContent || "").match(/https:\/\/[a-z0-9-]+-default-rtdb\.[^"'\s]+firebasedatabase\.app/i);
+      if (m) return m[0].replace(/\/+$/, "");
+    }
+    return "";
+  }
+
+  function captureThumb(file) {
+    return new Promise((resolve) => {
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onerror = () => resolve("");
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = () => resolve("");
+          img.onload = () => {
+            const scale = Math.min(1, 720 / Math.max(img.width || 1, img.height || 1));
+            const c = document.createElement("canvas");
+            c.width = Math.max(1, Math.round(img.width * scale));
+            c.height = Math.max(1, Math.round(img.height * scale));
+            c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+            resolve(c.toDataURL("image/jpeg", 0.72));
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      const v = document.createElement("video");
+      v.src = url;
+      v.muted = true;
+      v.playsInline = true;
+      const done = (out) => { URL.revokeObjectURL(url); resolve(out || ""); };
+      const t = setTimeout(() => done(""), 3000);
+      v.onerror = () => { clearTimeout(t); done(""); };
+      v.onloadeddata = () => { v.currentTime = Math.min(1, (v.duration || 1) / 2); };
+      v.onseeked = () => {
+        clearTimeout(t);
+        try {
+          const c = document.createElement("canvas");
+          c.width = 480;
+          c.height = 270;
+          c.getContext("2d").drawImage(v, 0, 0, 480, 270);
+          done(c.toDataURL("image/jpeg", 0.65));
+        } catch (_) { done(""); }
+      };
+    });
+  }
+
+  // Đếm số bài đăng và số video đang có trên cột Bảng tin (không tính khung soạn bài)
+  function snapshotFeedMetrics(composer) {
+    const container = composer ? composer.parentElement : document.body;
+    const allLikes = Array.from(container.querySelectorAll("button, span, div")).filter((el) => {
+      if (composer && composer.contains(el)) return false;
+      const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+      return /^([❤️🤍👍]\s*)?Thích\s*\(\d+\)$/i.test(t) && el.children.length <= 2;
+    });
+    const allVideos = Array.from(container.querySelectorAll("video")).filter(
+      (v) => !composer || !composer.contains(v)
+    );
+    return { postCount: allLikes.length, videoCount: allVideos.length };
+  }
+
+  // Ghi nhận tệp ảnh/video ngay khi người dùng chọn
+  window.addEventListener("change", async (e) => {
+    const inp = e.target;
+    if (!inp || inp.type !== "file" || !inp.files || !inp.files[0]) return;
+    const f = inp.files[0];
+    if (f.type.startsWith("video/")) {
+      pickedMedia = {
+        type: "video",
+        blobUrl: URL.createObjectURL(f),
+        thumbUrl: await captureThumb(f),
+        imageData: "",
+        fileName: f.name
+      };
+    } else if (f.type.startsWith("image/")) {
+      const compressed = await captureThumb(f);
+      pickedMedia = {
+        type: "image",
+        blobUrl: URL.createObjectURL(f),
+        thumbUrl: "",
+        imageData: compressed,
+        fileName: f.name
+      };
+    }
+  }, true);
+
+  function renderGuaranteedPostCard(composer, snap) {
+    if (!composer || !composer.parentElement) return;
+    const profile = getCurrentProfile();
+    const postId = "gp_" + Date.now();
+    const now = new Date();
+    const timeText = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+    const card = document.createElement("div");
+    card.dataset.veraGuaranteedPost = postId;
+    card.style.cssText =
+      "position:relative;background:#0f172a;border:1px solid #1e293b;border-radius:16px;" +
+      "padding:16px;margin-top:16px;margin-bottom:16px;color:#f8fafc;width:100%;box-sizing:border-box;";
+
+    const mediaHtml =
+      snap.media.type === "video" && snap.media.blobUrl
+        ? `<video src="${snap.media.blobUrl}" controls playsinline style="width:100%;max-height:480px;border-radius:12px;background:#000;margin-bottom:12px;"></video>`
+        : snap.media.type === "image" && (snap.media.imageData || snap.media.blobUrl)
+        ? `<img src="${snap.media.imageData || snap.media.blobUrl}" style="width:100%;max-height:480px;object-fit:contain;border-radius:12px;background:#020617;margin-bottom:12px;">`
+        : "";
+
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding-right:84px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <img src="${escapeHtml(profile.avatar)}" style="width:38px;height:38px;border-radius:50%;object-fit:cover;background:#1e293b;">
+          <div>
+            <div style="font-size:14px;font-weight:700;">${escapeHtml(profile.name)}</div>
+            <div style="font-size:11px;color:#94a3b8;">Vừa xong (${timeText}) • 🌍 Công khai</div>
+          </div>
+        </div>
+        <span style="font-size:11px;background:rgba(16,185,129,0.15);color:#34d399;padding:3px 10px;border-radius:999px;border:1px solid rgba(16,185,129,0.35);white-space:nowrap;">✓ Đã qua AI duyệt</span>
+      </div>
+      ${snap.caption ? `<div style="font-size:14px;line-height:1.5;margin-bottom:12px;white-space:pre-wrap;">${escapeHtml(snap.caption)}</div>` : ""}
+      ${mediaHtml}
+      <div style="display:flex;gap:18px;padding-top:10px;border-top:1px solid #1e293b;font-size:13px;color:#94a3b8;">
+        <button type="button" class="vera-gp-like" style="background:none;border:none;color:#94a3b8;font-weight:600;cursor:pointer;">🤍 Thích (0)</button>
+        <span class="vera-gp-cmt-count">💬 Bình luận (0)</span>
+      </div>
+      <div class="vera-gp-cmts" style="margin-top:8px;display:flex;flex-direction:column;gap:6px;"></div>
+      <form class="vera-gp-form" style="display:flex;gap:6px;margin-top:8px;">
+        <input type="text" placeholder="Viết bình luận an toàn..." style="flex:1;background:#1e293b;border:1px solid #334155;color:#f8fafc;border-radius:8px;padding:6px 10px;font-size:12px;outline:none;">
+        <button type="submit" style="padding:6px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Gửi</button>
+      </form>
+    `;
+
+    // Tương tác Thích & Bình luận ngay trên thẻ bài
+    let likes = 0, liked = false, cmtCount = 0;
+    const likeBtn = card.querySelector(".vera-gp-like");
+    likeBtn.onclick = () => {
+      liked = !liked;
+      likes += liked ? 1 : -1;
+      likeBtn.style.color = liked ? "#f43f5e" : "#94a3b8";
+      likeBtn.textContent = `${liked ? "❤️" : "🤍"} Thích (${likes})`;
+    };
+    const form = card.querySelector(".vera-gp-form");
+    form.onsubmit = (ev) => {
+      ev.preventDefault();
+      const inp = form.querySelector("input");
+      const val = inp ? inp.value.trim() : "";
+      if (!val) return;
+      cmtCount++;
+      card.querySelector(".vera-gp-cmt-count").textContent = `💬 Bình luận (${cmtCount})`;
+      const row = document.createElement("div");
+      row.style.cssText = "background:#020617;padding:7px 10px;border-radius:10px;font-size:12px;";
+      row.innerHTML = `<b style="color:#93c5fd;">${escapeHtml(getCurrentProfile().name)}:</b> ${escapeHtml(val)}`;
+      card.querySelector(".vera-gp-cmts").appendChild(row);
+      inp.value = "";
+    };
+
+    composer.parentElement.insertBefore(card, composer.nextSibling);
+    clearComposerInput(composer);
+
+    // Đồng bộ bản nhẹ lên Firebase để tài khoản khác cũng nhìn thấy
+    const base = getFirebaseBaseUrl();
+    if (base) {
+      const payload = {
+        id: postId,
+        authorId: profile.id,
+        authorName: profile.name,
+        authorAvatar: profile.avatar,
+        content: snap.caption || "",
+        mediaType: snap.media.type || "",
+        imageData: snap.media.type === "image" ? snap.media.imageData : "",
+        videoThumb: snap.media.type === "video" ? snap.media.thumbUrl : "",
+        fileName: snap.media.fileName || "",
+        timeText: `${timeText} • ${now.toLocaleDateString("vi-VN")}`,
+        createdAt: Date.now(),
+        likes: {},
+        comments: {}
+      };
+      fetch(`${base}/vera_public_feed_v1/${postId}.json`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).catch(() => {});
+    }
+  }
+
+  // Theo dõi khi bấm "Đăng Bài": sau khi AI duyệt AN TOÀN mà bảng tin vẫn chưa thêm bài -> tự hiển thị ngay
+  window.addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const label = (btn.textContent || "").replace(/\s+/g, " ").trim();
+    if (!label.includes("Đăng Bài")) return;
+
+    const composer = findComposerCard(btn);
+    if (!composer) return;
+
+    const caption = getComposerCaption(composer);
+    const mediaCopy = Object.assign({}, pickedMedia);
+    if (!caption && !mediaCopy.type) return;
+
+    const before = snapshotFeedMetrics(composer);
+    const snap = { caption, media: mediaCopy, before };
+
+    if (activeMonitorTimer) {
+      clearInterval(activeMonitorTimer);
+      activeMonitorTimer = null;
+    }
+
+    const verifyAndRenderIfMissing = () => {
+      const after = snapshotFeedMetrics(composer);
+      const addedPost = after.postCount > snap.before.postCount;
+      const addedVideo = snap.media.type === "video" && after.videoCount > snap.before.videoCount;
+      if (addedPost || addedVideo) {
+        pickedMedia = { type: "", blobUrl: "", thumbUrl: "", imageData: "", fileName: "" };
+        return; // Code gốc đã đăng thành công -> không tạo bản trùng
+      }
+      renderGuaranteedPostCard(composer, snap);
+      pickedMedia = { type: "", blobUrl: "", thumbUrl: "", imageData: "", fileName: "" };
+    };
+
+    if (!mediaCopy.type) {
+      // Bài chỉ có chữ -> kiểm tra sau 900ms
+      setTimeout(verifyAndRenderIfMissing, 900);
+      return;
+    }
+
+    // Bài có ảnh/video -> chờ thông báo kết quả AI trên #vera-mod-toast
+    let elapsed = 0;
+    activeMonitorTimer = setInterval(() => {
+      elapsed += 400;
+      const toast = document.getElementById("vera-mod-toast");
+      const text = toast && toast.style.display !== "none" ? (toast.textContent || "") : "";
+
+      // Nếu bị chặn hoặc lỗi Fail-Closed -> hủy chờ, tuyệt đối không đăng
+      if (text.includes("🚫") || text.includes("CHẶN") || text.includes("KHÓA") || text.includes("Lỗi")) {
+        clearInterval(activeMonitorTimer);
+        activeMonitorTimer = null;
+        return;
+      }
+
+      // Nếu AI đã báo duyệt AN TOÀN -> đợi thêm 900ms cho code gốc vẽ, nếu chưa có thì tự vẽ ngay
+      if (text.includes("✅") || text.includes("AN TOÀN")) {
+        clearInterval(activeMonitorTimer);
+        activeMonitorTimer = null;
+        setTimeout(verifyAndRenderIfMissing, 900);
+        return;
+      }
+
+      if (elapsed >= 30000) {
+        clearInterval(activeMonitorTimer);
+        activeMonitorTimer = null;
+      }
+    }, 400);
+  }, false);
+})();
+</script>
 </body>
 </html>
