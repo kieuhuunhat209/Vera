@@ -4566,5 +4566,494 @@ Chỉ xuất ra thuần JSON. Không chèn mã markdown hay lời giải thích 
   else boot();
 })();
 </script>
+<!-- ==================== VERA STRICT IMAGE FORENSIC GUARD v3 (HARD LOCK) ==================== -->
+<script>
+(function () {
+  console.log("🛡️ VERA Image Forensic Guard v3 READY");
+
+  const SHARED_API_KEY = "vera_shared_gemini_key_v1";
+  const ADMIN_QUEUE_KEY = "vera_admin_evidence_queue_v1";
+
+  const IMAGE_MODELS = [
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
+    "gemini-3.1-flash-lite"
+  ];
+
+  let selectedImageFile = null;
+  let selectedImageInput = null;
+  let isBlockedLocked = false;
+  let wasRemovedCleanly = false;
+  const blockedFileSignatures = new Set();
+  const blockedImageSources = new Set();
+  let approvedOnce = false;
+  let isScanningImage = false;
+  let lastPostBtn = null;
+
+  function getSavedApiKey() {
+    const direct = (localStorage.getItem(SHARED_API_KEY) || "").trim();
+    if (direct) return direct;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || "";
+      if (/api.?key|gemini/i.test(k)) {
+        const val = (localStorage.getItem(k) || "").trim();
+        if (val.startsWith("AIza") || val.startsWith("AQ.")) return val;
+      }
+    }
+    return "";
+  }
+
+  // Dò khung soạn bài đi ngược từ chính nút "Đăng Bài" (chạy đúng với mọi loại input/textarea)
+  function findComposerFromButton(btn) {
+    if (!btn) return document.body;
+    let el = btn.parentElement;
+    for (let i = 0; i < 7 && el && el !== document.body; i++) {
+      const hasInput = Boolean(el.querySelector("textarea, input[type='text'], input:not([type])"));
+      const txt = el.textContent || "";
+      if (hasInput && (txt.includes("Tải Video") || txt.includes("Ảnh"))) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+    return btn.parentElement?.parentElement || document.body;
+  }
+
+  // Dò chính xác ảnh xem trước nằm trong khung soạn bài hoặc ngay phía trên nút Đăng Bài
+  function findPreviewImage(composer, btn) {
+    const isPreviewCandidate = (img) => {
+      if (!img || img.offsetParent === null) return false;
+      const rect = img.getBoundingClientRect();
+      if (rect.width < 90 || rect.height < 60) return false;
+      const isSmallAvatar = /rounded-full/i.test(img.className || "") && rect.width <= 72;
+      return !isSmallAvatar;
+    };
+
+    if (composer && composer !== document.body) {
+      const inComposer = Array.from(composer.querySelectorAll("img")).find(isPreviewCandidate);
+      if (inComposer) return inComposer;
+    }
+
+    if (btn) {
+      const btnRect = btn.getBoundingClientRect();
+      const nearAbove = Array.from(document.querySelectorAll("img")).find((img) => {
+        if (!isPreviewCandidate(img)) return false;
+        const src = img.getAttribute("src") || "";
+        if (!src.startsWith("data:image") && !src.startsWith("blob:")) return false;
+        const r = img.getBoundingClientRect();
+        return r.bottom <= btnRect.top + 80 && r.top >= btnRect.top - 750;
+      });
+      if (nearAbove) return nearAbove;
+    }
+
+    return null;
+  }
+
+  // Bấm đúng nút × nằm đè trên góc ảnh xem trước để code gốc tự xóa ảnh khỏi bộ nhớ
+  function clickRemovePreviewButton(previewImg, composer) {
+    if (selectedImageInput) {
+      try { selectedImageInput.value = ""; } catch (_) {}
+    }
+    if (composer) {
+      composer.querySelectorAll('input[type="file"]').forEach((inp) => {
+        try { inp.value = ""; } catch (_) {}
+      });
+    }
+    if (!previewImg) return false;
+
+    const imgRect = previewImg.getBoundingClientRect();
+    const scope = previewImg.parentElement?.parentElement || composer || document.body;
+    const candidates = Array.from(scope.querySelectorAll("button, [role='button'], span[onclick], div[onclick]")).filter((el) => {
+      if (el.offsetParent === null) return false;
+      const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (/Đăng Bài|Tải Video|Ảnh/i.test(t)) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0 || r.width > 64 || r.height > 64) return false;
+      const overlapsImg =
+        r.left >= imgRect.left - 16 &&
+        r.right <= imgRect.right + 16 &&
+        r.top >= imgRect.top - 16 &&
+        r.bottom <= imgRect.bottom + 16;
+      const looksLikeClose =
+        t === "×" || t === "✕" || t.toLowerCase() === "x" ||
+        Boolean(el.querySelector("svg, i")) ||
+        /close|remove|clear|delete/i.test((el.className || "") + " " + (el.getAttribute("onclick") || ""));
+      return overlapsImg && looksLikeClose;
+    });
+
+    if (candidates.length > 0) {
+      candidates[0].click();
+      return true;
+    }
+    return false;
+  }
+
+  function showImageToast(type, title, detail) {
+    let box = document.getElementById("vera-mod-toast");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "vera-mod-toast";
+      box.style.cssText = "position:fixed;top:74px;right:20px;z-index:2147483647;width:360px;max-width:calc(100vw - 24px);border-radius:14px;padding:14px 16px;color:#f8fafc;box-shadow:0 18px 45px rgba(0,0,0,0.8);font-size:13px;line-height:1.45;";
+      document.body.appendChild(box);
+    }
+    const colors = {
+      loading: { bg: "#0f172a", border: "#3b82f6", accent: "#60a5fa" },
+      safe:    { bg: "#052e16", border: "#10b981", accent: "#34d399" },
+      blocked: { bg: "#450a0a", border: "#ef4444", accent: "#fca5a5" },
+      error:   { bg: "#451a03", border: "#f59e0b", accent: "#fcd34d" }
+    }[type] || { bg: "#0f172a", border: "#334155", accent: "#94a3b8" };
+
+    box.style.background = colors.bg;
+    box.style.border = `1px solid ${colors.border}`;
+    box.style.display = "block";
+    box.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div>
+          <div style="font-weight:700;color:${colors.accent};margin-bottom:4px;">${title}</div>
+          <div style="font-size:12px;color:#e2e8f0;">${detail}</div>
+        </div>
+        <button type="button" onclick="this.closest('#vera-mod-toast').style.display='none'" style="background:rgba(255,255,255,0.1);border:none;color:#fff;width:24px;height:24px;border-radius:6px;cursor:pointer;flex-shrink:0;">✕</button>
+      </div>
+    `;
+    clearTimeout(box._hideTimer);
+    if (type !== "loading") {
+      box._hideTimer = setTimeout(() => { box.style.display = "none"; }, 9000);
+    }
+  }
+
+  function encodeImageForForensic(img) {
+    try {
+      const w = img.naturalWidth || img.width || 1;
+      const h = img.naturalHeight || img.height || 1;
+      const scale = Math.min(1, 1024 / Math.max(w, h));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(w * scale));
+      canvas.height = Math.max(1, Math.round(h * scale));
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const tScale = Math.min(1, 320 / Math.max(w, h));
+      const tCanvas = document.createElement("canvas");
+      tCanvas.width = Math.max(1, Math.round(w * tScale));
+      tCanvas.height = Math.max(1, Math.round(h * tScale));
+      tCanvas.getContext("2d").drawImage(img, 0, 0, tCanvas.width, tCanvas.height);
+
+      return {
+        base64: canvas.toDataURL("image/jpeg", 0.86).split(",")[1],
+        thumb: tCanvas.toDataURL("image/jpeg", 0.6)
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function prepareForensicImageFromFile(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onerror = () => resolve(null);
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => resolve(null);
+        img.onload = () => resolve(encodeImageForForensic(img));
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function pushBlockedImageToAdmin(verdict, thumb, caption) {
+    try {
+      const raw = localStorage.getItem(ADMIN_QUEUE_KEY);
+      const q = raw ? JSON.parse(raw) : [];
+      const navBtn = document.getElementById("vera-nav-auth-btn") || document.getElementById("vera-nav-account-btn");
+      const author = navBtn ? navBtn.textContent.replace(/•.*$/, "").replace(/^[🛡️👤]\s*/, "").trim() : "Thành viên VERA";
+
+      q.unshift({
+        id: "img_ev_" + Date.now(),
+        authorName: author,
+        caption: caption ? `[ẢNH BỊ CHẶN] ${caption}` : "[ẢNH TĨNH VI PHẠM BỊ CHẶN]",
+        reason: verdict.reason,
+        riskScore: verdict.riskScore,
+        thumb: thumb || "",
+        status: "pending",
+        time: new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+      });
+      localStorage.setItem(ADMIN_QUEUE_KEY, JSON.stringify(q.slice(0, 20)));
+
+      const pending = q.filter(i => i.status === "pending").length;
+      document.querySelectorAll("button, a").forEach(btn => {
+        if ((btn.textContent || "").includes("Quản trị AI")) {
+          const badge = btn.querySelector("span");
+          if (badge && /^\d+$/.test(badge.textContent.trim())) badge.textContent = String(pending);
+        }
+      });
+    } catch (_) {}
+  }
+
+  async function scanImageForensic(apiKey, base64Jpeg, captionText) {
+    const promptText =
+      "Bạn là hệ thống AI kiểm duyệt pháp y NGHIÊM NGẶT TUYỆT ĐỐI cho mạng xã hội học đường VERA.\n" +
+      "Soi kỹ ảnh đính kèm để phát hiện:\n" +
+      "1. MÁU & THƯƠNG TÍCH (hasBloodOrGore): vết máu, tai nạn đổ máu, nạn nhân nằm trên đường, vết cắt, tự làm hại bản thân, cảnh ghê rợn.\n" +
+      "2. HUNG KHÍ & VẬT SẮC NHỌN (hasWeapons): dao, dao bấm, dao rọc giấy, mã tấu, kiếm, lưỡi lam, kéo chĩa đe dọa, súng, hung khí.\n" +
+      "3. BẠO LỰC (hasPhysicalViolence): đánh nhau, đấm đá, bắt nạt, hành hung.\n" +
+      "4. NỘI DUNG 18+ (hasNSFW): khỏa thân, nhạy cảm.\n" +
+      `Chú thích đi kèm: "${(captionText || "").slice(0, 200)}"\n` +
+      "QUY TẮC: Phát hiện BẤT KỲ dấu hiệu nào ở trên PHẢI đặt isSafe = false và riskScore từ 70 đến 100.\n" +
+      'Trả về DUY NHẤT 1 đối tượng JSON: {"isSafe": boolean, "riskScore": number, "hasBloodOrGore": boolean, "hasWeapons": boolean, "hasPhysicalViolence": boolean, "hasNSFW": boolean, "reason": "Mô tả ngắn bằng tiếng Việt"}';
+
+    const payload = {
+      contents: [{
+        role: "user",
+        parts: [
+          { text: promptText },
+          { inlineData: { mimeType: "image/jpeg", data: base64Jpeg } }
+        ]
+      }],
+      safetySettings: [
+        { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+        { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+      ],
+      generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+    };
+
+    let lastErr = "Không kết nối được tới máy chủ AI";
+    for (const modelId of IMAGE_MODELS) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 14000);
+      try {
+        const resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: controller.signal }
+        );
+        clearTimeout(timer);
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) { lastErr = data?.error?.message || `HTTP ${resp.status}`; continue; }
+
+        const cand = data?.candidates?.[0];
+        const blockReason = data?.promptFeedback?.blockReason || cand?.finishReason;
+        if (["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "OTHER"].includes(blockReason) && !cand?.content?.parts?.length) {
+          return {
+            ok: true, model: modelId,
+            verdict: {
+              isSafe: false, riskScore: 99, hasBloodOrGore: true, hasWeapons: true,
+              hasPhysicalViolence: false, hasNSFW: false,
+              reason: `Bộ lọc an toàn Google chặn cứng hình ảnh nguy hiểm (${blockReason}).`
+            }
+          };
+        }
+
+        const parts = cand?.content?.parts || [];
+        const textPart = parts.find(p => !p.thought && typeof p.text === "string" && p.text.trim()) ||
+                         parts.find(p => typeof p.text === "string" && p.text.trim());
+        const raw = (textPart?.text || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+        const s = raw.indexOf("{"), e = raw.lastIndexOf("}");
+        const parsed = JSON.parse(s !== -1 && e > s ? raw.slice(s, e + 1) : raw);
+
+        const hasBlood = Boolean(parsed.hasBloodOrGore);
+        const hasWeapons = Boolean(parsed.hasWeapons);
+        const hasViolence = Boolean(parsed.hasPhysicalViolence);
+        const hasNSFW = Boolean(parsed.hasNSFW);
+        const score = Number.isFinite(Number(parsed.riskScore)) ? Number(parsed.riskScore) : (hasBlood || hasWeapons ? 95 : 5);
+        const safe = Boolean(parsed.isSafe) && !hasBlood && !hasWeapons && !hasViolence && !hasNSFW && score < 40;
+
+        return {
+          ok: true, model: modelId,
+          verdict: {
+            isSafe: safe, riskScore: score, hasBloodOrGore: hasBlood, hasWeapons: hasWeapons,
+            hasPhysicalViolence: hasViolence, hasNSFW: hasNSFW,
+            reason: String(parsed.reason || (safe ? "Hình ảnh an toàn." : "Phát hiện máu, hung khí sắc nhọn hoặc nội dung vi phạm."))
+          }
+        };
+      } catch (err) {
+        clearTimeout(timer);
+        lastErr = err.name === "AbortError" ? "Quá thời gian chờ (14s)" : err.message;
+      }
+    }
+    return { ok: false, error: lastErr };
+  }
+
+  // Ghi nhận khi người dùng chọn tệp mới
+  window.addEventListener("change", (e) => {
+    const inp = e.target;
+    if (!inp || inp.type !== "file" || !inp.files || !inp.files[0]) return;
+    const f = inp.files[0];
+    if (f.type && f.type.startsWith("image/")) {
+      selectedImageFile = f;
+      selectedImageInput = inp;
+      const sig = `${f.name}_${f.size}_${f.lastModified}`;
+      isBlockedLocked = blockedFileSignatures.has(sig);
+      wasRemovedCleanly = false;
+    } else {
+      selectedImageFile = null;
+      selectedImageInput = null;
+      isBlockedLocked = false;
+      wasRemovedCleanly = true;
+    }
+  }, true);
+
+  // Mở khóa lại nếu người dùng tự bấm nút × để gỡ ảnh vi phạm khỏi khung
+  window.addEventListener("click", (e) => {
+    if (!isBlockedLocked || !lastPostBtn) return;
+    const btn = e.target.closest("button");
+    if (btn && (btn.textContent || "").includes("Đăng Bài")) return;
+    setTimeout(() => {
+      const composer = findComposerFromButton(lastPostBtn);
+      const stillThere = findPreviewImage(composer, lastPostBtn);
+      if (!stillThere && !selectedImageFile) {
+        isBlockedLocked = false;
+        wasRemovedCleanly = true;
+      }
+    }, 120);
+  }, false);
+
+  // Chặn tuyệt đối ở tầng window (chạy trước toàn bộ sự kiện đăng bài của trang)
+  window.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const label = (btn.textContent || "").replace(/\s+/g, " ").trim();
+    if (!label.includes("Đăng Bài")) return;
+
+    lastPostBtn = btn;
+
+    if (approvedOnce) {
+      approvedOnce = false;
+      return;
+    }
+
+    const composer = findComposerFromButton(btn);
+    const previewImg = findPreviewImage(composer, btn);
+    const previewSrc = previewImg ? (previewImg.getAttribute("src") || "") : "";
+    const fileSig = selectedImageFile ? `${selectedImageFile.name}_${selectedImageFile.size}_${selectedImageFile.lastModified}` : "";
+
+    // LỚP KHÓA CỨNG: Nếu đang khóa ảnh vi phạm, hoặc ảnh vi phạm vẫn còn, hoặc chọn lại đúng ảnh đã bị chặn
+    const matchesBlocked =
+      (isBlockedLocked && (Boolean(previewImg) || !wasRemovedCleanly)) ||
+      (previewSrc && blockedImageSources.has(previewSrc)) ||
+      (fileSig && blockedFileSignatures.has(fileSig));
+
+    if (matchesBlocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const clickedClose = clickRemovePreviewButton(previewImg, composer);
+      setTimeout(() => {
+        const stillThere = findPreviewImage(composer, btn);
+        if (clickedClose && !stillThere) {
+          wasRemovedCleanly = true;
+          isBlockedLocked = false;
+        } else if (stillThere) {
+          stillThere.style.outline = "3px solid #ef4444";
+        }
+      }, 80);
+      showImageToast(
+        "blocked",
+        "🚫 ĐÃ KHÓA ĐĂNG LẠI ẢNH VI PHẠM",
+        "Ảnh này đã bị AI chặn tuyệt đối. Hãy bấm dấu × trên góc ảnh để xóa hoặc chọn ảnh khác an toàn hơn."
+      );
+      return;
+    }
+
+    // Không có ảnh nào (bài chữ hoặc video) -> cho chạy bình thường
+    if (!previewImg && !selectedImageFile) return;
+
+    // Có ảnh mới -> chặn lại để AI soi pháp y trước (Fail-Closed)
+    e.preventDefault();
+    e.stopImmediatePropagation();
+
+    if (isScanningImage) return;
+    const apiKey = getSavedApiKey();
+    if (!apiKey) {
+      showImageToast("error", "⚠️ Chưa cấu hình Gemini API Key", "Hệ thống Fail-Closed chặn đăng ảnh khi chưa có khóa AI.");
+      return;
+    }
+
+    isScanningImage = true;
+    const t0 = performance.now();
+    showImageToast("loading", "🔎 AI VERA đang soi pháp y hình ảnh...", "Đang kiểm tra máu, tai nạn, hung khí sắc nhọn, bạo lực và 18+...");
+
+    try {
+      const prepared = selectedImageFile
+        ? await prepareForensicImageFromFile(selectedImageFile)
+        : (previewImg ? encodeImageForForensic(previewImg) : null);
+
+      if (!prepared) {
+        isBlockedLocked = true;
+        wasRemovedCleanly = false;
+        showImageToast("error", "❌ Không đọc được dữ liệu ảnh", "Vui lòng bấm × gỡ ảnh và chọn lại tệp hợp lệ.");
+        return;
+      }
+
+      const textBox = composer.querySelector("textarea, input[type='text'], input:not([type])");
+      const caption = textBox ? textBox.value.trim() : "";
+      const res = await scanImageForensic(apiKey, prepared.base64, caption);
+      const sec = ((performance.now() - t0) / 1000).toFixed(1);
+
+      const lockAndClear = (reasonText, score, toastType, toastTitle, toastDetail) => {
+        isBlockedLocked = true;
+        wasRemovedCleanly = false;
+        if (previewSrc) blockedImageSources.add(previewSrc);
+        if (fileSig) blockedFileSignatures.add(fileSig);
+        selectedImageFile = null;
+
+        const clickedClose = clickRemovePreviewButton(previewImg, composer);
+        setTimeout(() => {
+          const stillThere = findPreviewImage(composer, btn);
+          if (clickedClose && !stillThere) {
+            wasRemovedCleanly = true;
+            isBlockedLocked = false;
+          } else if (stillThere) {
+            stillThere.style.outline = "3px solid #ef4444";
+          }
+        }, 80);
+
+        showImageToast(toastType, toastTitle, toastDetail);
+        pushBlockedImageToAdmin({ reason: reasonText, riskScore: score }, prepared.thumb, caption);
+      };
+
+      if (!res.ok) {
+        lockAndClear(
+          `Lỗi AI khi quét ảnh: ${res.error}`,
+          85,
+          "error",
+          `❌ Lỗi kiểm duyệt ảnh (${sec}s • Fail-Closed)`,
+          `${res.error}. Ảnh đã bị khóa và gỡ khỏi khung đăng.`
+        );
+        return;
+      }
+
+      const v = res.verdict;
+      if (!v.isSafe) {
+        const flags = [];
+        if (v.hasBloodOrGore) flags.push("Máu / Thương tích");
+        if (v.hasWeapons) flags.push("Hung khí sắc nhọn");
+        if (v.hasPhysicalViolence) flags.push("Bạo lực");
+        if (v.hasNSFW) flags.push("18+");
+        const tagText = flags.length ? `[${flags.join(", ")}] ` : "";
+
+        lockAndClear(
+          `${tagText}${v.reason}`,
+          v.riskScore,
+          "blocked",
+          `🚫 ĐÃ CHẶN ẢNH VI PHẠM (${sec}s • Rủi ro ${v.riskScore}%)`,
+          `${tagText}${v.reason} — Ảnh đã bị chặn tuyệt đối và chuyển về Quản trị AI.`
+        );
+        return;
+      }
+
+      // Ảnh an toàn -> mở khóa và cho đăng
+      showImageToast("safe", `✅ Ảnh AN TOÀN (${sec}s • ${res.model})`, `${v.reason} Đang đăng lên Bảng tin.`);
+      selectedImageFile = null;
+      isBlockedLocked = false;
+      wasRemovedCleanly = true;
+      approvedOnce = true;
+      btn.click();
+    } finally {
+      isScanningImage = false;
+    }
+  }, true);
+})();
+</script>
 </body>
 </html>
